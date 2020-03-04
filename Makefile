@@ -1,5 +1,5 @@
 
-all: client server
+all: cchat cserverd
 
 
 
@@ -14,14 +14,14 @@ main.o: main.cpp
 
 
 
-client: clientmain.o 
-	$(CXX) -L./ -Wall -o client clientmain.o 
+cchat: clientmain.o 
+	$(CXX) -L./ -Wall -o cchat clientmain.o 
 
-server: servermain.o 
-	$(CXX) -L./ -Wall -o server servermain.o 
+cserverd: servermain.o 
+	$(CXX) -L./ -Wall -o cserverd servermain.o 
 
 
 
 
 clean:
-	rm *.o *.a server client
+	rm *.o *.a cserverd cchat
