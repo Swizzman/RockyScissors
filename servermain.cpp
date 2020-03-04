@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
 	uint16_t tempSFD;
 	uint8_t returnValue;
 	regex_t regex;
-	returnValue = regcomp(&regex, "^[ _[:alnum:]]*$", 0);
+	returnValue = regcomp(&regex, "^[_[:alnum:]]*$", 0);
 	if (returnValue != 0)
 	{
 		printf("Error compiling regex\n");
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
 								}
 								else
 								{
-									send(clients[i]->socket, "Unkown command\n", strlen("Unkown command\n"), 0);
+									send(clients[i]->socket, "ERROR Unkown command\n", strlen("ERROR Unkown command\n"), 0);
 								}
 
 							}

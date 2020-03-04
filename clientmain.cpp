@@ -29,7 +29,7 @@ void sendMsg(void)
 		gets(input);
 		if (strstr(input, "NICK ") != NULL)
 		{
-			if (strlen(input) < 12)
+			if (strlen(input) < 17)
 			{
 
 				numBytes = send(sockFD, input, strlen(input), 0);
@@ -43,8 +43,11 @@ void sendMsg(void)
 		}
 		else
 		{
-
-			if (strlen(input) <= 250)
+			if (strlen(input)  <1)
+			{
+				printf("Message too short\n");
+			}
+			else if (strlen(input) <= 250 )
 			{
 				sprintf(msgToSend, "MSG %s\n", input);
 				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
@@ -71,7 +74,7 @@ int main(int argc, char* argv[]) {
 	}
 	regex_t regex;
 	uint16_t returnValue;
-	returnValue = regcomp(&regex, "^[ _[:alnum:]]*$", 0);
+	returnValue = regcomp(&regex, "^[_[:alnum:]]*$", 0);
 	if (returnValue != 0)
 	{
 		printf("Error compiling regex\n");
