@@ -11,6 +11,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <regex.h>
 /* You will to add includes here */
 
 
@@ -25,14 +26,15 @@ struct client
 	char nickname[100];
 	uint16_t port;
 	uint16_t socket;
+	int NicksChanged = 0;
 };
 int MAXCLIENTS = 10;
 int nrOfClients = 0;
 struct client** clients = new client * [MAXCLIENTS] { nullptr };
 int main(int argc, char* argv[]) {
-	if (argc < 3)
+	if (argc < 2)
 	{
-		printf("To few arguments!");
+		printf("To few arguments!\nExpected <IP(optional)> <port>\n");
 		exit(0);
 	}
 	/* Do more magic */
@@ -41,6 +43,13 @@ int main(int argc, char* argv[]) {
 	uint16_t sockFD;
 	uint16_t tempSFD;
 	uint8_t returnValue;
+	regex_t regex;
+	returnValue = regcomp(&regex, "^[ _[:alnum:]]*$", 0);
+	if (returnValue != 0)
+	{
+		printf("Error compiling regex\n");
+		exit(0);
+	}
 	fd_set master;
 	fd_set read_sds;
 	int fDMax;
@@ -57,8 +66,9 @@ int main(int argc, char* argv[]) {
 	guide.ai_socktype = SOCK_STREAM;
 	guide.ai_flags = AI_PASSIVE;
 	struct sockaddr_in theirAddr;
-	char protocol[20] = "Chat TCP 1.0\n";
-
+	char protocol[20] = "HELLO 1\n";
+	char command[10];
+	char buffer[256];
 	socklen_t theirAddr_len = sizeof(theirAddr);
 	if (argc == 3)
 	{
@@ -71,7 +81,7 @@ int main(int argc, char* argv[]) {
 	}
 	else if (argc == 2)
 	{
-		if ((returnValue = getaddrinfo(argv[1], argv[2], &guide, &serverInfo)) != 0)
+		if ((returnValue = getaddrinfo(NULL, argv[1], &guide, &serverInfo)) != 0)
 		{
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(returnValue));
 			exit(0);
@@ -111,13 +121,24 @@ int main(int argc, char* argv[]) {
 		}
 		else if (argc == 2)
 		{
-			printf("[x]Listening on %s:%s\n", argv[1], argv[2]);
+			struct sockaddr_in addres;
+			int sa_len;
+			sa_len = sizeof(addres);
+			getsockname(sockFD, (struct sockaddr*) & addres, &sa_len);
+
+			char servAddr[250];
+			socklen_t bl = sizeof(servAddr);
+			inet_ntop(addres.sin_family, &addres.sin_addr, servAddr, bl);
+			printf("[x]Listening on %s:%s\n", servAddr, argv[1]);
 		}
 	}
 	FD_SET(sockFD, &master);
 	fDMax = sockFD;
 	while (true)
 	{
+
+		memset(&command, 0, sizeof(command));
+		memset(&buffer, 0, sizeof(buffer));
 		memset(&clientMsg, 0, clientMsgLen);
 		memset(&msgToSend, 0, sizeof(msgToSend));
 		read_sds = master;
@@ -130,7 +151,6 @@ int main(int argc, char* argv[]) {
 		{
 			if (FD_ISSET(i, &read_sds))
 			{
-				printf("i: %d\n", i);
 				if (i == sockFD)
 				{
 					if ((tempSFD = accept(sockFD, (struct sockaddr*) & theirAddr, &theirAddr_len)) == -1)
@@ -139,15 +159,16 @@ int main(int argc, char* argv[]) {
 					}
 					else
 					{
-						printf("Client connected from %s:%d\n", inet_ntoa(theirAddr.sin_addr), ntohs(theirAddr.sin_port));
+						printf("Cienlt connected from %s:%d\n", inet_ntoa(theirAddr.sin_addr), ntohs(theirAddr.sin_port));
 						clients[nrOfClients] = new client;
 						clients[nrOfClients]->address = inet_ntoa(theirAddr.sin_addr);
 						clients[nrOfClients]->port = ntohs(theirAddr.sin_port);
 						clients[nrOfClients]->socket = tempSFD;
+						printf("%s", protocol);
 						numBytes = send(clients[nrOfClients]->socket, protocol, strlen(protocol), 0);
-						numBytes = recv(clients[nrOfClients]->socket, clients[nrOfClients]->nickname, sizeof(clients[nrOfClients]->nickname), 0);
+						printf("[<]Sent %d bytes\n", numBytes);
 
-						printf("Client name: %s\n", clients[nrOfClients]->nickname);
+
 						FD_SET(clients[nrOfClients]->socket, &master);
 						if (clients[nrOfClients]->socket > fDMax)
 						{
@@ -177,7 +198,6 @@ int main(int argc, char* argv[]) {
 											clients[y] = clients[y + 1];
 										}
 									}
-									printf("ISA EQUAL\n");
 									nrOfClients--;
 									found = true;
 								}
@@ -198,6 +218,8 @@ int main(int argc, char* argv[]) {
 					else
 					{
 
+						sscanf(clientMsg, "%s %[^\n]", command, buffer);
+
 						struct sockaddr_in addres;
 						int sa_len;
 						sa_len = sizeof(addres);
@@ -210,7 +232,69 @@ int main(int argc, char* argv[]) {
 						{
 							if (strcmp(bobp, clients[i]->address) == 0 && ntohs(addres.sin_port) == clients[i]->port)
 							{
-								sprintf(msgToSend, "%s: %s", clients[i]->nickname, clientMsg);
+								if (strcmp(command, "MSG") == 0)
+								{
+
+									sprintf(msgToSend, "%s %s %s", command,clients[i]->nickname, buffer);
+									msgToSend[strlen(msgToSend)] = '\n';
+								}
+								else if (strcmp(command, "NICK") == 0)
+								{
+									if (strlen(buffer) < 12)
+									{
+
+										if (clients[i]->NicksChanged != 0)
+										{
+
+											printf("%s wants to change name\n", clients[i]->nickname);
+										}
+										returnValue = regexec(&regex, buffer, 0, NULL, 0);
+										if (returnValue == REG_NOMATCH)
+										{
+											printf("Name does not match\n");
+											char error[24] = "ERROR Name not allowed\n";
+											send(clients[i]->socket, error, strlen(error), 0);
+
+
+
+										}
+										else
+										{
+											printf("Name is allowed\n");
+											if (clients[i]->NicksChanged < 2)
+											{
+												strcpy(clients[i]->nickname, buffer);
+												if (clients[i]->NicksChanged != 0)
+												{
+
+													printf("Name successfully changed\n");
+												}
+												clients[i]->NicksChanged++;
+												char ok[4] = "OK\n";
+												send(clients[i]->socket, ok, strlen(ok), 0);
+											}
+											else
+											{
+												char error[25] = "ERROR Too many changes\n";
+												printf("Error, name already changed\n");
+												send(clients[i]->socket, error, strlen(error), 0);
+
+											}
+										}
+									}
+									else
+									{
+										char error[14] = "ERROR Length\n";
+										send(clients[i]->socket, error, strlen(error), 0);
+
+									}
+
+								}
+								else
+								{
+									send(clients[i]->socket, "Unkown command\n", strlen("Unkown command\n"), 0);
+								}
+
 							}
 						}
 						for (int y = 0; y < nrOfClients; y++)
@@ -220,9 +304,13 @@ int main(int argc, char* argv[]) {
 							{
 								if (y != sockFD && clients[y]->socket != i)
 								{
-									if ((numBytes = send(clients[y]->socket, msgToSend, strlen(msgToSend), 0)) == -1)
+									if (strcmp(command, "MSG") == 0)
 									{
-										printf("Error sending\n");
+
+										if ((numBytes = send(clients[y]->socket, msgToSend, strlen(msgToSend), 0)) == -1)
+										{
+											printf("Error sending\n");
+										}
 									}
 								}
 								else
@@ -238,5 +326,11 @@ int main(int argc, char* argv[]) {
 			}
 		}
 	}
+	for (int i = 0; i < nrOfClients; i++)
+	{
+		close(clients[i]->socket);
+		delete clients[i];
+	}
+	delete[] clients;
 	return 0;
 }
