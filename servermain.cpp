@@ -23,7 +23,7 @@ using namespace std;
 struct client
 {
 	char* address;
-	char nickname[100];
+	char nickname[100] = "";
 	uint16_t port;
 	uint16_t socket;
 	int NicksChanged = 0;
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
 					}
 					else
 					{
-						printf("Cienlt connected from %s:%d\n", inet_ntoa(theirAddr.sin_addr), ntohs(theirAddr.sin_port));
+						printf("Client connected from %s:%d\n", inet_ntoa(theirAddr.sin_addr), ntohs(theirAddr.sin_port));
 						clients[nrOfClients] = new client;
 						clients[nrOfClients]->address = inet_ntoa(theirAddr.sin_addr);
 						clients[nrOfClients]->port = ntohs(theirAddr.sin_port);
@@ -234,9 +234,17 @@ int main(int argc, char* argv[]) {
 							{
 								if (strcmp(command, "MSG") == 0)
 								{
+									if (strcmp(clients[b]->nickname, "") != 0)
+									{
 
-									sprintf(msgToSend, "%s %s %s", command,clients[b]->nickname, buffer);
-									msgToSend[strlen(msgToSend)] = '\n';
+										sprintf(msgToSend, "%s %s %s", command, clients[b]->nickname, buffer);
+										msgToSend[strlen(msgToSend)] = '\n';
+									}
+									else
+									{
+										strcpy(command, "Err");
+										send(clients[b]->socket, "ERROR No name set\n", strlen("ERROR No name set\n"), 0);
+									}
 								}
 								else if (strcmp(command, "NICK") == 0)
 								{
@@ -297,26 +305,31 @@ int main(int argc, char* argv[]) {
 
 							}
 						}
-						for (int y = 0; y < nrOfClients; y++)
+						if (strcmp(command, "Err") != 0)
 						{
 
-							if (FD_ISSET(clients[y]->socket, &master))
+							for (int y = 0; y < nrOfClients; y++)
 							{
-								if (y != sockFD && clients[y]->socket != i)
+
+								if (FD_ISSET(clients[y]->socket, &master))
 								{
-									if (strcmp(command, "MSG") == 0)
+									if (y != sockFD && clients[y]->socket != i)
 									{
-
-										if ((numBytes = send(clients[y]->socket, msgToSend, strlen(msgToSend), 0)) == -1)
+										if (strcmp(command, "MSG") == 0)
 										{
-											printf("Error sending\n");
-										}
-									}
-								}
-								else
-								{
-									printf("%s", msgToSend);
 
+											if ((numBytes = send(clients[y]->socket, msgToSend, strlen(msgToSend), 0)) == -1)
+											{
+												printf("Error sending\n");
+											}
+										}
+
+									}
+									else
+									{
+										printf("%s", msgToSend);
+
+									}
 								}
 							}
 						}
