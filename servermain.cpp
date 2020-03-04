@@ -228,14 +228,14 @@ int main(int argc, char* argv[]) {
 						char bobp[250];
 						socklen_t bl = sizeof(bobp);
 						inet_ntop(addres.sin_family, &addres.sin_addr, bobp, bl);
-						for (int i = 0; i < nrOfClients; i++)
+						for (int b = 0; b < nrOfClients; b++)
 						{
-							if (strcmp(bobp, clients[i]->address) == 0 && ntohs(addres.sin_port) == clients[i]->port)
+							if (strcmp(bobp, clients[b]->address) == 0 && ntohs(addres.sin_port) == clients[b]->port)
 							{
 								if (strcmp(command, "MSG") == 0)
 								{
 
-									sprintf(msgToSend, "%s %s %s", command,clients[i]->nickname, buffer);
+									sprintf(msgToSend, "%s %s %s", command,clients[b]->nickname, buffer);
 									msgToSend[strlen(msgToSend)] = '\n';
 								}
 								else if (strcmp(command, "NICK") == 0)
@@ -243,17 +243,17 @@ int main(int argc, char* argv[]) {
 									if (strlen(buffer) < 12)
 									{
 
-										if (clients[i]->NicksChanged != 0)
+										if (clients[b]->NicksChanged != 0)
 										{
 
-											printf("%s wants to change name\n", clients[i]->nickname);
+											printf("%s wants to change name\n", clients[b]->nickname);
 										}
 										returnValue = regexec(&regex, buffer, 0, NULL, 0);
 										if (returnValue == REG_NOMATCH)
 										{
 											printf("Name does not match\n");
 											char error[24] = "ERROR Name not allowed\n";
-											send(clients[i]->socket, error, strlen(error), 0);
+											send(clients[b]->socket, error, strlen(error), 0);
 
 
 
@@ -261,23 +261,23 @@ int main(int argc, char* argv[]) {
 										else
 										{
 											printf("Name is allowed\n");
-											if (clients[i]->NicksChanged < 2)
+											if (clients[b]->NicksChanged < 2)
 											{
-												strcpy(clients[i]->nickname, buffer);
-												if (clients[i]->NicksChanged != 0)
+												strcpy(clients[b]->nickname, buffer);
+												if (clients[b]->NicksChanged != 0)
 												{
 
 													printf("Name successfully changed\n");
 												}
-												clients[i]->NicksChanged++;
+												clients[b]->NicksChanged++;
 												char ok[4] = "OK\n";
-												send(clients[i]->socket, ok, strlen(ok), 0);
+												send(clients[b]->socket, ok, strlen(ok), 0);
 											}
 											else
 											{
 												char error[25] = "ERROR Too many changes\n";
 												printf("Error, name already changed\n");
-												send(clients[i]->socket, error, strlen(error), 0);
+												send(clients[b]->socket, error, strlen(error), 0);
 
 											}
 										}
@@ -285,14 +285,14 @@ int main(int argc, char* argv[]) {
 									else
 									{
 										char error[14] = "ERROR Length\n";
-										send(clients[i]->socket, error, strlen(error), 0);
+										send(clients[b]->socket, error, strlen(error), 0);
 
 									}
 
 								}
 								else
 								{
-									send(clients[i]->socket, "ERROR Unkown command\n", strlen("ERROR Unkown command\n"), 0);
+									send(clients[b]->socket, "ERROR Unkown command\n", strlen("ERROR Unkown command\n"), 0);
 								}
 
 							}
