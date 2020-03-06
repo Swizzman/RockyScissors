@@ -147,6 +147,7 @@ int main(int argc, char* argv[]) {
 			printf("Select error: %s\n", strerror(errno));
 			close(sockFD);
 		}
+
 		for (int i = 0; i <= fDMax; i++)
 		{
 			if (FD_ISSET(i, &read_sds))
@@ -211,8 +212,8 @@ int main(int argc, char* argv[]) {
 						{
 							printf("Error recieving: %s\n", strerror(errno));
 
-						}
 						close(i);
+						}
 						FD_CLR(i, &master);
 					}
 					else
@@ -314,7 +315,7 @@ int main(int argc, char* argv[]) {
 
 								if (FD_ISSET(clients[y]->socket, &master))
 								{
-									if (y != sockFD && clients[y]->socket != i)
+									if (clients[y]->socket != sockFD && clients[y]->socket != i)
 									{
 										if (strcmp(command, "MSG") == 0)
 										{
