@@ -26,7 +26,7 @@ void sendMsg(void)
 		memset(&msgToSend, 0, sizeof(msgToSend));
 		memset(&input, 0, sizeof(input));
 		uint16_t numBytes;
-		gets(input);
+		fgets(input, sizeof(input), stdin);
 		if (strstr(input, "NICK ") != NULL)
 		{
 			if (strlen(input) < 17)

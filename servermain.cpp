@@ -243,7 +243,8 @@ int main(int argc, char* argv[]) {
 									else
 									{
 										strcpy(command, "Err");
-										send(clients[b]->socket, "ERROR No name set\n", strlen("ERROR No name set\n"), 0);
+										numBytes = send(clients[b]->socket, "ERROR No name set\n", strlen("ERROR No name set\n"), 0);
+										printf("[<]Sent %d bytes\n", numBytes);
 									}
 								}
 								else if (strcmp(command, "NICK") == 0)
