@@ -16,28 +16,76 @@
 
 
 uint16_t sockFD;
+
 void sendMsg(void)
 {
 	char input[500];
 	char msgToSend[270];
+	while (true)
+	{
+		memset(&msgToSend, 0, sizeof(msgToSend));
+		memset(&input, 0, sizeof(input));
+		uint16_t numBytes;
+		fgets(input, sizeof(input), stdin);
+		if (strstr(input, "NICK ") != NULL)
+		{
+			if (strlen(input) < 17)
+			{
 
-	memset(&msgToSend, 0, sizeof(msgToSend));
-	memset(&input, 0, sizeof(input));
-	uint16_t numBytes;
-	fgets(input, sizeof(input), stdin);
+				numBytes = send(sockFD, input, strlen(input), 0);
+			}
+			else
+			{
+				printf("Name too long\n");
+			}
 
 
+		}
+		else
+		{
+			if (strlen(input)  <1)
+			{
+				printf("Message too short\n");
+			}
+			else if (strlen(input) <= 250 )
+			{
+				sprintf(msgToSend, "MSG %s\n", input);
+				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
+			}
+			else
+			{
+				printf("Message too long\n");
+			}
+		}
+
+	}
 }
 int main(int argc, char* argv[]) {
 
-	if (argc < 3)
+	if (argc < 4)
 	{
-		printf("To few arguments!\nExpected: <server-ip> <server-port>");
+		printf("To few arguments!\nExpected: <server-ip> <server-port> <nickname>");
 		exit(0);
 	}
-
+	if (strlen(argv[3]) > 12)
+	{
+		printf("Error, name too long");
+		exit(0);
+	}
+	regex_t regex;
 	uint16_t returnValue;
-
+	returnValue = regcomp(&regex, "^[_[:alnum:]]*$", 0);
+	if (returnValue != 0)
+	{
+		printf("Error compiling regex\n");
+		exit(0);
+	}
+	returnValue = regexec(&regex, argv[3], 0, NULL, 0);
+	if (returnValue == REG_NOMATCH)
+	{
+		printf("Name does not match\n");
+		exit(0);
+	}
 	struct addrinfo hints, * serverInfo, * p;
 	uint16_t numBytes;
 	memset(&hints, 0, sizeof(hints));
@@ -47,11 +95,8 @@ int main(int argc, char* argv[]) {
 	char servMsg[270];
 	int servMsg_Len = sizeof(servMsg);
 	char msgToPrint[270];
-	char command[40];
-	char input[500];
-	char msgToSend[270];
 	memset(&servMsg, 0, sizeof(servMsg));
-	char protocol[20] = "RPS TCP 1\n";
+	char protocol[20] = "HELLO 1\n";
 	if ((returnValue = getaddrinfo(argv[1], argv[2], &hints, &serverInfo)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(returnValue));
@@ -91,10 +136,21 @@ int main(int argc, char* argv[]) {
 	printf("Server protocol: %s", servMsg);
 	if (strcmp(servMsg, protocol) == 0)
 	{
-		printf("Protocol supported\n");
-		numBytes = send(sockFD, "CONACC 1\n", strlen("CONACC 1\n"), 0);
-		printf("[<]Sent %d bytes\n", numBytes);
-
+		printf("Protocol supported, sending nickname\n");
+		sprintf(servMsg, "NICK %s", argv[3]);
+		numBytes = send(sockFD, servMsg, strlen(servMsg), 0);
+		memset(&servMsg, 0, sizeof(servMsg));
+		numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0);
+		if (strcmp(servMsg, "OK\n") != 0)
+		{
+			printf("Name not accepted\n");
+			close(sockFD);
+			exit(0);
+		}
+		else
+		{
+			printf("Name accepted!\n");
+		}
 
 	}
 	else
@@ -103,75 +159,46 @@ int main(int argc, char* argv[]) {
 		close(sockFD);
 		exit(0);
 	}
-	//std::thread sendingThread(sendMsg);
-
+	std::thread sendingThread(sendMsg);
 	while (true)
 	{
-		memset(&msgToSend, 0, sizeof(msgToSend));
-		memset(&input, 0, sizeof(input));
+		char command[4];
 		memset(&command, 0, sizeof(command));
 		memset(&servMsg, 0, sizeof(servMsg));
 		memset(&msgToPrint, 0, sizeof(msgToPrint));
-		if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) == 0)
-		{
-			break;
-		}
-		printf("[<]Recieved %d bytes\n", numBytes);
-		sscanf(servMsg, "%s", command);
+		numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0);
 
-		if (strcmp(command, "MENU") == 0)
+		if (numBytes > 0)
 		{
-			sscanf(servMsg, "%s %[^\0]", command, msgToPrint);
-
-			printf("%s", msgToPrint);
-			fgets(input, sizeof(input), stdin);
-			if ((strcmp(input, "1\n") == 0) || (strcmp(input, "2\n") == 0))
+			sscanf(servMsg, "%s", command);
+			//printf("[>]Recieved %d bytes\n", numBytes);
+			if (strcmp(command, "ERROR") == 0)
 			{
-				sprintf(msgToSend, "OPT %s", input);
-				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
+				sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
+				printf("Error: %s\n", msgToPrint);
+			}
+			else if (strcmp(command, "OK") == 0)
+			{
+				printf("Name accepted!\n");
 			}
 			else
 			{
-				printf("Wrong input!\n");
-			}
-		}
-		else if (strcmp(command, "RDY")== 0)
-		{
-			printf("Game is ready\n");
-			numBytes = send(sockFD, "RDY \n", strlen("RDY \n"), 0);
-			printf("[<]Sent %d bytes\n", numBytes);
-		}
-		else if (strcmp(command, "START") == 0)
-		{
-			printf("Please select an option\n1.Rock\n2.Paper\n3.Scissor\n");
-			fgets(input, sizeof(input), stdin);
-			if (strchr(input, '1') != NULL)
-			{
-				printf("You have selected Rock!\n");
-				numBytes = send(sockFD, "OPT 1\n", strlen("OPT 1\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-			}
-			else if (strchr(input, '2') != NULL)
-			{
-				printf("You have selected Paper!\n");
-				numBytes = send(sockFD, "OPT 2\n", strlen("OPT 2\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-			}
-			else if (strchr(input, '3') != NULL)
-			{
-				printf("You have selected Scissor!\n");
-				numBytes = send(sockFD, "OPT 3\n", strlen("OPT 3\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
+				char name[20];
+				memset(&name, 0, sizeof(name));
+				sscanf(servMsg, "%s %s %[^\n]", command, name, msgToPrint);
+				printf("%s: %s\n", name, msgToPrint);
+
 			}
 		}
 		else
 		{
-			printf("%s", servMsg);
+			break;
 		}
 
 
+
 	}
+	sendingThread.join();
 	close(sockFD);
 }
 

@@ -12,9 +12,9 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <regex.h>
-#include <time.h>
-#include <thread>
 /* You will to add includes here */
+
+
 
 
 
@@ -23,199 +23,56 @@ using namespace std;
 struct client
 {
 	char* address;
+	char nickname[100] = "";
 	uint16_t port;
 	uint16_t socket;
-	uint16_t score = 0;
-	bool inMenu = true;
-	bool ready = false;
-	uint16_t option = 0;
+	int NicksChanged = 0;
 };
-struct game
-{
-	client* client1;
-	client* client2;
-	time_t startTime;
-	int stage = 0;
-	bool gameOver = false;
-};
-int MAXGAMES = 10;
-int nrOfGames = 0;
 int MAXCLIENTS = 10;
 int nrOfClients = 0;
-int MAXTHREADS = 10;
-int nrOfThreads = 0;
 struct client** clients = new client * [MAXCLIENTS] { nullptr };
-struct game** games = new game * [MAXGAMES] { nullptr };
-std::thread** threads = new std::thread * [MAXTHREADS] {nullptr};
-uint16_t numBytes;
-void checkGames(void)
-{
-	char msgToSend[350];
-	char command[20];
-	while (true)
-	{
-
-		for (int i = 0; i < nrOfGames; i++)
-		{
-			if (games[i]->gameOver)
-			{
-				strcpy(command, "MENU");
-				sprintf(msgToSend, "%s ", command);
-				strcat(msgToSend, "Please select!\n1.Play\n2.Watch\n");
-				send(games[i]->client1->socket, msgToSend, strlen(msgToSend), 0);
-				send(games[i]->client2->socket, msgToSend, strlen(msgToSend), 0);
-				
-				delete games[i];
-				for (int j = i; j < nrOfGames; j++)
-				{
-					if (games[j + 1] != nullptr)
-					{
-						games[j] = games[j + 1];
-					}
-				}
-			}
-		}
-	}
-}
-void playGame(game* game)
-{
-	char msgToSend[100];
-	printf("playGame Started\n");
-	time_t startTime = time(NULL);
-	int counter = 3;
-	printf("Start Time: %ld\n", game->startTime);
-	bool startSent = false;
-	sprintf(msgToSend, "MSG Game will start in %d seconds\n", counter);
-	numBytes = send(game->client1->socket, msgToSend, strlen(msgToSend), 0);
-	printf("[<]Sent %d bytes\n", numBytes);
-	numBytes = send(game->client2->socket, msgToSend, strlen(msgToSend), 0);
-	printf("[<]Sent %d bytes\n", numBytes);
-	while (!game->gameOver)
-	{
-		memset(&msgToSend, 0, sizeof(msgToSend));
-		if (game != nullptr)
-		{
-
-			if (game->client1->score >= 3 || game->client2->score >= 3)
-			{
-				printf("Game over!\n");
-				game->gameOver = true;
-			}
-			else if (time(NULL) - startTime > 1 && counter > 0)
-			{
-				sprintf(msgToSend, "MSG Game will start in %d seconds\n", counter);
-				numBytes = send(game->client1->socket, msgToSend, strlen(msgToSend), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-				numBytes = send(game->client2->socket, msgToSend, strlen(msgToSend), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-				startTime = time(NULL);
-				counter--;
-			}
-			else if (!startSent && counter == 0)
-			{
-				numBytes = send(game->client1->socket, "START \n", strlen("START \n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-				numBytes = send(game->client2->socket, "START \n", strlen("START \n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-				startSent = true;
-			}
-			else if (counter == 0)
-			{
-				if (game->client1->option > 0 && game->client2->option > 0)
-				{
-					printf("Both have selected\n");
-					if ((game->client1->option == 1 && game->client2->option == 3) ||
-						(game->client1->option == 2 && game->client2->option == 1) ||
-						(game->client1->option == 3 && game->client2->option == 2))
-					{
-						printf("Player 1 has won\n");
-						send(game->client2->socket, "MSG You've lost\n", strlen("MSG You've lost\n"), 0);
-						send(game->client1->socket, "MSG You've won\n", strlen("MSG You've won\n"), 0);
-						game->client1->score++;
-						game->client1->option = 0;
-						game->client2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
-					}
-					else if ((game->client2->option == 1 && game->client1->option == 3) ||
-						(game->client2->option == 2 && game->client1->option == 1) ||
-						(game->client2->option == 3 && game->client1->option == 2))
-					{
-						printf("Player 2 has won\n");
-						send(game->client1->socket, "MSG You've lost\n", strlen("MSG You've lost\n"), 0);
-						send(game->client2->socket, "MSG You've won\n", strlen("MSG You've won\n"), 0);
-
-						game->client2->score++;
-
-						game->client1->option = 0;
-						game->client2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
-					}
-					else if (game->client1->option == game->client2->option)
-					{
-						printf("It's a tie\n");
-						send(game->client1->socket, "MSG Tie\n", strlen("MSG Tie\n"), 0);
-						send(game->client2->socket, "MSG Tie\n", strlen("MSG Tie\n"), 0);
-						game->client1->option = 0;
-						game->client2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
-					}
-				}
-			}
-		}
-	}
-
-}
-int main(int argc, char* argv[])
-{
-
+int main(int argc, char* argv[]) {
 	if (argc < 2)
 	{
 		printf("To few arguments!\nExpected <IP(optional)> <port>\n");
 		exit(0);
 	}
-
+	/* Do more magic */
 	struct addrinfo guide, * serverInfo, * p;
-	struct sockaddr_in theirAddr;
-	socklen_t theirAddr_len = sizeof(theirAddr);
-
-	uint8_t returnValue;
+	uint16_t numBytes;
 	uint16_t sockFD;
 	uint16_t tempSFD;
-
+	uint8_t returnValue;
+	regex_t regex;
+	returnValue = regcomp(&regex, "^[_[:alnum:]]*$", 0);
+	if (returnValue != 0)
+	{
+		printf("Error compiling regex\n");
+		exit(0);
+	}
 	fd_set master;
 	fd_set read_sds;
 	int fDMax;
-
 	char clientMsg[350];
 	int clientMsgLen = sizeof(clientMsg);
 	char msgToSend[350];
-	char command[20];
-	char buffer[350];
-	char protocol[20] = "RPS TCP 1\n";
-
 	struct timeval timeO;
 	timeO.tv_sec = 5;
 	timeO.tv_usec = 0;
-
+	memset(&guide, 0, sizeof(guide));
 	FD_ZERO(&master);
 	FD_ZERO(&read_sds);
-
-	memset(&guide, 0, sizeof(guide));
 	guide.ai_family = AF_INET;
 	guide.ai_socktype = SOCK_STREAM;
 	guide.ai_flags = AI_PASSIVE;
-
-	client* clientQueue[10];
-	int clientsInQueue = 0;
-
+	struct sockaddr_in theirAddr;
+	char protocol[20] = "HELLO 1\n";
+	char command[10];
+	char buffer[256];
+	socklen_t theirAddr_len = sizeof(theirAddr);
 	if (argc == 3)
 	{
+
 		if ((returnValue = getaddrinfo(argv[1], argv[2], &guide, &serverInfo)) != 0)
 		{
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(returnValue));
@@ -277,7 +134,6 @@ int main(int argc, char* argv[])
 	}
 	FD_SET(sockFD, &master);
 	fDMax = sockFD;
-	std::thread supervisorThread(checkGames);
 	while (true)
 	{
 
@@ -356,15 +212,15 @@ int main(int argc, char* argv[])
 						{
 							printf("Error recieving: %s\n", strerror(errno));
 
-							close(i);
+						close(i);
 						}
 						FD_CLR(i, &master);
 					}
 					else
 					{
-						printf("%s", clientMsg);
 
 						sscanf(clientMsg, "%s %[^\n]", command, buffer);
+
 						struct sockaddr_in addres;
 						int sa_len;
 						sa_len = sizeof(addres);
@@ -377,129 +233,110 @@ int main(int argc, char* argv[])
 						{
 							if (strcmp(bobp, clients[b]->address) == 0 && ntohs(addres.sin_port) == clients[b]->port)
 							{
-
-								if (strcmp(command, "CONACC") == 0)
+								if (strcmp(command, "MSG") == 0)
 								{
-									strcpy(command, "MENU");
-									sprintf(msgToSend, "%s ", command);
-									strcat(msgToSend, "Please select!\n1.Play\n2.Watch\n");
-									printf("%s", msgToSend);
-									numBytes = send(clients[b]->socket, msgToSend, strlen(msgToSend), 0);
-									printf("[<]Sent %d bytes\n", numBytes);
-								}
-								else if (strcmp(command, "OPT") == 0)
-								{
-
-									if (clients[b]->inMenu == true)
+									if (strcmp(clients[b]->nickname, "") != 0)
 									{
-										if (strcmp(buffer, "1") == 0)
+
+										sprintf(msgToSend, "%s %s %s", command, clients[b]->nickname, buffer);
+										msgToSend[strlen(msgToSend)] = '\n';
+									}
+									else
+									{
+										strcpy(command, "Err");
+										numBytes = send(clients[b]->socket, "ERROR No name set\n", strlen("ERROR No name set\n"), 0);
+										printf("[<]Sent %d bytes\n", numBytes);
+									}
+								}
+								else if (strcmp(command, "NICK") == 0)
+								{
+									if (strlen(buffer) < 12)
+									{
+
+										if (clients[b]->NicksChanged != 0)
 										{
-											clients[b]->inMenu = false;
-											clientQueue[clientsInQueue] = clients[b];
-											clientsInQueue++;
-											if (clientsInQueue >= 2)
+
+											printf("%s wants to change name\n", clients[b]->nickname);
+										}
+										returnValue = regexec(&regex, buffer, 0, NULL, 0);
+										if (returnValue == REG_NOMATCH)
+										{
+											printf("Name does not match\n");
+											char error[24] = "ERROR Name not allowed\n";
+											send(clients[b]->socket, error, strlen(error), 0);
+
+
+
+										}
+										else
+										{
+											printf("Name is allowed\n");
+											if (clients[b]->NicksChanged < 2)
 											{
-												numBytes = send(clientQueue[0]->socket, "RDY \n", strlen("RDY \n"), 0);
-												printf("[<]Sent %d bytes\n", numBytes);
+												strcpy(clients[b]->nickname, buffer);
+												if (clients[b]->NicksChanged != 0)
+												{
 
-												numBytes = send(clientQueue[1]->socket, "RDY \n", strlen("RDY \n"), 0);
-												printf("[<]Sent %d bytes\n", numBytes);
+													printf("Name successfully changed\n");
+												}
+												clients[b]->NicksChanged++;
+												char ok[4] = "OK\n";
+												send(clients[b]->socket, ok, strlen(ok), 0);
 											}
+											else
+											{
+												char error[25] = "ERROR Too many changes\n";
+												printf("Error, name already changed\n");
+												send(clients[b]->socket, error, strlen(error), 0);
 
+											}
 										}
 									}
 									else
 									{
-										for (int u = 0; u < nrOfGames; u++)
-										{
-											if (games[u]->client1->socket == i)
-											{
-												printf("Option selected\n");
-												if (strcmp(buffer, "1") == 0)
-												{
-													games[u]->client1->option = 1;
+										char error[14] = "ERROR Length\n";
+										send(clients[b]->socket, error, strlen(error), 0);
 
-												}
-												else if (strcmp(buffer, "2") == 0)
-												{
-													games[u]->client1->option = 2;
-
-												}
-												else if (strcmp(buffer, "3") == 0)
-												{
-													games[u]->client1->option = 3;
-
-												}
-
-											}
-											else if (games[u]->client2->socket == i)
-											{
-												printf("Option selected\n");
-												if (strcmp(buffer, "1") == 0)
-												{
-													games[u]->client2->option = 1;
-
-												}
-												else if (strcmp(buffer, "2") == 0)
-												{
-													games[u]->client2->option = 2;
-
-												}
-												else if (strcmp(buffer, "3") == 0)
-												{
-													games[u]->client2->option = 3;
-
-												}
-											}
-										}
 									}
-								}
-								else if (strcmp(command, "RDY") == 0)
-								{
-									clients[b]->ready = true;
-									if (clientsInQueue >= 2)
-									{
-										bool found = false;
-										for (int j = 0; j < clientsInQueue; j++)
-										{
-											if (clientQueue[j]->ready)
-											{
-												for (int k = j + 1; k < clientsInQueue && !found; k++)
-												{
-													if (clientQueue[k]->ready)
-													{
-														found = true;
-														games[nrOfGames] = new game;
-														games[nrOfGames]->client1 = clientQueue[j];
-														games[nrOfGames]->client2 = clientQueue[k];
-														threads = new std::thread(playGame, games[nrOfGames]);
-														for (int l = k; l < clientsInQueue; l++)
-														{
-															clientQueue[l] = clientQueue[l + 1];
-														}
-														clientsInQueue--;
-														for (int l = j; l < clientsInQueue; l++)
-														{
-															clientQueue[l] = clientQueue[l + 1];
-														}
-														clientsInQueue--;
-														nrOfGames++;
-													}
-												}
-											}
-										}
-										printf("Game start\n");
-									}
+
 								}
 								else
 								{
 									send(clients[b]->socket, "ERROR Unkown command\n", strlen("ERROR Unkown command\n"), 0);
+								}
 
+							}
+						}
+						if (strcmp(command, "Err") != 0)
+						{
+
+							for (int y = 0; y < nrOfClients; y++)
+							{
+
+								if (FD_ISSET(clients[y]->socket, &master))
+								{
+									if (clients[y]->socket != sockFD && clients[y]->socket != i)
+									{
+										if (strcmp(command, "MSG") == 0)
+										{
+
+											if ((numBytes = send(clients[y]->socket, msgToSend, strlen(msgToSend), 0)) == -1)
+											{
+												printf("Error sending\n");
+											}
+										}
+
+									}
+									else
+									{
+										printf("%s", msgToSend);
+
+									}
 								}
 							}
 						}
-					}
 
+					}
 				}
 			}
 		}
