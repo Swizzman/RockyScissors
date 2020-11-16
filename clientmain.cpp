@@ -14,7 +14,6 @@
 #include <regex.h>
 /* You will to add includes here */
 
-
 uint16_t sockFD;
 void sendMsg(void)
 {
@@ -24,10 +23,9 @@ void sendMsg(void)
 	memset(&msgToSend, 0, sizeof(msgToSend));
 	memset(&input, 0, sizeof(input));
 	fgets(input, sizeof(input), stdin);
-
-
 }
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
 
 	if (argc < 3)
 	{
@@ -37,15 +35,15 @@ int main(int argc, char* argv[]) {
 
 	uint16_t returnValue;
 
-	struct addrinfo hints, * serverInfo, * p;
+	struct addrinfo hints, *serverInfo, *p;
 	uint16_t numBytes;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
-	char servMsg[270];
+	char servMsg[500];
 	int servMsg_Len = sizeof(servMsg);
-	char msgToPrint[270];
+	char msgToPrint[500];
 	char command[40];
 	char input[500];
 	char msgToSend[550];
@@ -57,8 +55,10 @@ int main(int argc, char* argv[]) {
 		exit(0);
 	}
 	p = serverInfo;
-	for (p = serverInfo; p != NULL; p = p->ai_next) {
-		if ((sockFD = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+	for (p = serverInfo; p != NULL; p = p->ai_next)
+	{
+		if ((sockFD = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+		{
 			perror("client: socket");
 			continue;
 		}
@@ -71,14 +71,15 @@ int main(int argc, char* argv[]) {
 
 		break;
 	}
-	if (p == NULL) {
+	if (p == NULL)
+	{
 		fprintf(stderr, "client: failed to create socket\n");
 		return 2;
 	}
 	struct sockaddr_in addres;
 	socklen_t sa_len;
 	sa_len = sizeof(addres);
-	getpeername(sockFD, (struct sockaddr*) & addres, &sa_len);
+	getpeername(sockFD, (struct sockaddr *)&addres, &sa_len);
 
 	char servAddr[250];
 	socklen_t bl = sizeof(servAddr);
@@ -93,8 +94,6 @@ int main(int argc, char* argv[]) {
 		printf("Protocol supported\n");
 		numBytes = send(sockFD, "CONACC 1\n", strlen("CONACC 1\n"), 0);
 		printf("[<]Sent %d bytes\n", numBytes);
-
-
 	}
 	else
 	{
@@ -102,7 +101,6 @@ int main(int argc, char* argv[]) {
 		close(sockFD);
 		exit(0);
 	}
-	//std::thread sendingThread(sendMsg);
 
 	while (true)
 	{
@@ -111,14 +109,15 @@ int main(int argc, char* argv[]) {
 		memset(&command, 0, sizeof(command));
 		memset(&servMsg, 0, sizeof(servMsg));
 		memset(&msgToPrint, 0, sizeof(msgToPrint));
-		if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) == 0)
+
+		if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) < 0)
 		{
 			break;
 		}
-		printf("[<]Recieved %d bytes\n", numBytes);
-		printf("%s\n", servMsg);
-		sscanf(servMsg, "%s %[\n]", command, msgToPrint);
-		printf("Command: %s, text: %s\n", command, msgToPrint);
+
+		// printf("[<]Recieved %d bytes\n", numBytes);
+		// printf("%s\n", servMsg);
+		sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
 		if (strcmp(command, "MENU") == 0)
 		{
 			printf("Please select:\n1. Play\n2. Watch\n");
@@ -134,7 +133,7 @@ int main(int argc, char* argv[]) {
 				printf("Wrong input!\n");
 			}
 		}
-		else if (strcmp(command, "RDY")== 0)
+		else if (strcmp(command, "RDY") == 0)
 		{
 			printf("Game is ready\n");
 			numBytes = send(sockFD, "RDY \n", strlen("RDY \n"), 0);
@@ -166,15 +165,17 @@ int main(int argc, char* argv[]) {
 		else if (strcmp(command, "OVER") == 0)
 		{
 			printf("Game Over\n");
+			numBytes = send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 		}
-		else if(strcmp(command, "MSG") == 0)
+		else if (strcmp(command, "SPEC") == 0)
 		{
-			printf("%s", msgToPrint);
-
+			printf("game: %s\n", msgToPrint);
 		}
 
-
+		else if (strcmp(command, "MSG") == 0)
+		{
+			printf("%s\n", msgToPrint);
+		}
 	}
 	close(sockFD);
 }
-

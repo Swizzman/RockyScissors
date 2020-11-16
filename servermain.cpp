@@ -15,8 +15,14 @@
 #include <time.h>
 #include <thread>
 #include <pthread.h>
+#define ROCK 1
+#define PAPER 2
+#define SCISSORS 3
 /* You will to add includes here */
-
+#define MAX_SPECTATORS 10
+#define MAX_GAMES 10
+#define MAX_CLIENTS 100
+#define MAX_THREADS 10
 struct client
 {
 	char *address;
@@ -25,30 +31,28 @@ struct client
 	uint16_t score = 0;
 	bool inMenu = true;
 	bool ready = false;
+	bool isSpectator = false;
 	uint16_t option = 0;
 };
 struct game
 {
 	client *player1;
 	client *player2;
+	client *spectators[MAX_SPECTATORS];
 	time_t startTime;
-	int stage = 0;
+	int nrOfSpectators = 0;
 	bool gameOver = false;
 };
-int MAXGAMES = 10;
 int nrOfGames = 0;
-int MAXCLIENTS = 10;
 int nrOfClients = 0;
-int MAXTHREADS = 10;
 int nrOfThreads = 0;
-struct client **clients = new client *[MAXCLIENTS] { nullptr };
-struct game **games = new game *[MAXGAMES] { nullptr };
-std::thread **threads = new std::thread *[MAXTHREADS] { nullptr };
+struct client **clients = new client *[MAX_CLIENTS] { nullptr };
+struct game **games = new game *[MAX_GAMES] { nullptr };
+std::thread **threads = new std::thread *[MAX_THREADS] { nullptr };
 uint16_t numBytes;
 void checkGames(void)
 {
-	char msgToSend[350];
-	char command[20];
+
 	while (true)
 	{
 
@@ -56,13 +60,14 @@ void checkGames(void)
 		{
 			if (games[i]->gameOver)
 			{
-				strcpy(command, "MENU");
-				sprintf(msgToSend, "%s ", command);
-				strcat(msgToSend, "Please select!\n1.Play\n2.Watch\n");
-				send(games[i]->player1->socket, msgToSend, strlen(msgToSend), 0);
-				send(games[i]->player2->socket, msgToSend, strlen(msgToSend), 0);
-
 				threads[i]->join();
+				games[i]->player1->option = 0;
+				games[i]->player1->ready = false;
+				games[i]->player1->score = 0;
+
+				games[i]->player2->option = 0;
+				games[i]->player2->ready = false;
+				games[i]->player2->score = 0;
 				delete games[i];
 				delete threads[i];
 				for (int j = i; j < nrOfGames; j++)
@@ -74,6 +79,8 @@ void checkGames(void)
 						threads[j] = threads[j + 1];
 					}
 				}
+				nrOfGames--;
+				nrOfThreads--;
 			}
 		}
 	}
@@ -81,16 +88,10 @@ void checkGames(void)
 void playGame(game *game)
 {
 	char msgToSend[100];
-	printf("playGame Started\n");
-	time_t startTime = time(NULL);
-	int counter = 3;
+	time_t startTime = time(NULL) + 1;
+	int counter = 4;
 	printf("Start Time: %ld\n", game->startTime);
 	bool startSent = false;
-	// sprintf(msgToSend, "MSG Game will start in %d seconds\n", counter);
-	// numBytes = send(game->player1->socket, msgToSend, strlen(msgToSend), 0);
-	// printf("[<]Sent %d bytes\n", numBytes);
-	// numBytes = send(game->player2->socket, msgToSend, strlen(msgToSend), 0);
-	// printf("[<]Sent %d bytes\n", numBytes);
 	while (!game->gameOver)
 	{
 		memset(&msgToSend, 0, sizeof(msgToSend));
@@ -99,15 +100,14 @@ void playGame(game *game)
 
 			if (game->player1->score >= 3 || game->player2->score >= 3)
 			{
+				sleep(1);
 				printf("Game over!\n");
 				game->gameOver = true;
 			}
 			else if (time(NULL) - startTime > 1 && counter > 0)
 			{
-				sprintf(msgToSend, "MSG Game will start in %d seconds\n", counter);
+				sprintf(msgToSend, "MSG Game will start in %d seconds\n", counter - 1);
 				numBytes = send(game->player1->socket, msgToSend, strlen(msgToSend), 0);
-				printf("MSG Game will start in %d seconds\n", counter);
-				printf("%d\n", strlen(msgToSend));
 				printf("[<]Sent %d bytes\n", numBytes);
 				numBytes = send(game->player2->socket, msgToSend, strlen(msgToSend), 0);
 				printf("[<]Sent %d bytes\n", numBytes);
@@ -116,6 +116,7 @@ void playGame(game *game)
 			}
 			else if (!startSent && counter == 0)
 			{
+				sleep(0.5);
 				numBytes = send(game->player1->socket, "START \n", strlen("START \n"), 0);
 				printf("[<]Sent %d bytes\n", numBytes);
 				numBytes = send(game->player2->socket, "START \n", strlen("START \n"), 0);
@@ -127,53 +128,66 @@ void playGame(game *game)
 				if (game->player1->option > 0 && game->player2->option > 0)
 				{
 					printf("Both have selected\n");
-					if ((game->player1->option == 1 && game->player2->option == 3) ||
-						(game->player1->option == 2 && game->player2->option == 1) ||
-						(game->player1->option == 3 && game->player2->option == 2))
+					switch (game->player1->option)
+					{
+					case ROCK:
+						strcat(msgToSend, "MSG Player 1 selected ROCK");
+						break;
+					case PAPER:
+						strcat(msgToSend, "MSG Player 1 selected PAPER");
+						break;
+					case SCISSORS:
+						strcat(msgToSend, "MSG Player 1 selected SCISSORS");
+						break;
+					}
+					switch (game->player2->option)
+					{
+					case ROCK:
+						strcat(msgToSend, ", Player 2 selected ROCK");
+						break;
+					case PAPER:
+						strcat(msgToSend, ", Player 2 selected PAPER");
+						break;
+					case SCISSORS:
+						strcat(msgToSend, ", Player 2 selected SCISSORS");
+						break;
+					}
+					if ((game->player1->option == ROCK && game->player2->option == SCISSORS) ||
+						(game->player1->option == PAPER && game->player2->option == ROCK) ||
+						(game->player1->option == SCISSORS && game->player2->option == PAPER))
 					{
 						printf("Player 1 has won\n");
 						send(game->player2->socket, "MSG You've lost\n", strlen("MSG You've lost\n"), 0);
 						send(game->player1->socket, "MSG You've won\n", strlen("MSG You've won\n"), 0);
 						game->player1->score++;
-						game->player1->option = 0;
-						game->player2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
 					}
-					else if ((game->player2->option == 1 && game->player1->option == 3) ||
-							 (game->player2->option == 2 && game->player1->option == 1) ||
-							 (game->player2->option == 3 && game->player1->option == 2))
+					else if ((game->player2->option == ROCK && game->player1->option == SCISSORS) ||
+							 (game->player2->option == PAPER && game->player1->option == ROCK) ||
+							 (game->player2->option == SCISSORS && game->player1->option == PAPER))
 					{
 						printf("Player 2 has won\n");
 						send(game->player1->socket, "MSG You've lost\n", strlen("MSG You've lost\n"), 0);
 						send(game->player2->socket, "MSG You've won\n", strlen("MSG You've won\n"), 0);
-
+						sprintf(msgToSend, "Player ");
 						game->player2->score++;
-
-						game->player1->option = 0;
-						game->player2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
 					}
-					else if (game->player1->option == game->player2->option)
+					else
 					{
 						printf("It's a tie\n");
 						send(game->player1->socket, "MSG Tie\n", strlen("MSG Tie\n"), 0);
 						send(game->player2->socket, "MSG Tie\n", strlen("MSG Tie\n"), 0);
-						game->player1->option = 0;
-						game->player2->option = 0;
-						startTime = time(NULL);
-						counter = 3;
-						startSent = false;
 					}
+					game->player1->option = 0;
+					game->player2->option = 0;
+					startTime = time(NULL) + 1;
+					counter = 4;
+					startSent = false;
 				}
 			}
 		}
 	}
-	numBytes = send(game->player1->socket, "OVER \n\0", strlen("OVER \n\0"), 0);
-	numBytes = send(game->player2->socket, "OVER \n\0", strlen("OVER \n\0"), 0);
+	numBytes = send(game->player1->socket, "OVER \0", strlen("OVER \0"), 0);
+	numBytes = send(game->player2->socket, "OVER \0", strlen("OVER \0"), 0);
 }
 int main(int argc, char *argv[])
 {
@@ -334,6 +348,19 @@ int main(int argc, char *argv[])
 						{
 							bool found = false;
 							printf("Client left\n");
+							for (int k = 0; k < clientsInQueue && !found; k++)
+							{
+								if (clientQueue[k]->socket == i)
+								{
+									for (int j = k; j < clientsInQueue; j++)
+									{
+										clientQueue[j] = clientQueue[j + 1];
+									}
+									found = true;
+									clientsInQueue--;
+								}
+							}
+							found = false;
 							for (int h = 0; h < nrOfClients && !found; h++)
 							{
 								if (clients[h]->socket == i)
@@ -386,6 +413,7 @@ int main(int argc, char *argv[])
 								{
 
 									numBytes = send(clients[b]->socket, "MENU\0", strlen("MENU\0"), 0);
+									clients[b]->inMenu = true;
 									printf("[<]Sent %d bytes\n", numBytes);
 								}
 								else if (strcmp(command, "OPT") == 0)
@@ -400,12 +428,31 @@ int main(int argc, char *argv[])
 											clientsInQueue++;
 											if (clientsInQueue >= 2)
 											{
-												numBytes = send(clientQueue[0]->socket, "RDY \n", strlen("RDY \n"), 0);
+												numBytes = send(clientQueue[0]->socket, "RDY\0", strlen("RDY\0"), 0);
 												printf("[<]Sent %d bytes\n", numBytes);
 
-												numBytes = send(clientQueue[1]->socket, "RDY \n", strlen("RDY \n"), 0);
+												numBytes = send(clientQueue[1]->socket, "RDY\0", strlen("RDY\0"), 0);
 												printf("[<]Sent %d bytes\n", numBytes);
 											}
+										}
+										else if (strcmp(buffer, "2") == 0)
+										{
+											clients[b]->isSpectator = true;
+											for (int k = 0; k < nrOfGames; k++)
+											{
+												memset(&msgToSend, 0, sizeof(msgToSend));
+												sprintf(msgToSend, "SPEC %d\n", k);
+												numBytes = send(clients[b]->socket, msgToSend, strlen(msgToSend), 0);
+												printf("[<]Sent %d bytes\n", numBytes);
+											}
+										}
+									}
+									else if (clients[b]->isSpectator)
+									{
+										int temp = atoi(buffer);
+										if (temp < nrOfGames)
+										{
+											games[temp]->spectators[games[temp]->nrOfSpectators++] = clients[b];
 										}
 									}
 									else
@@ -417,15 +464,15 @@ int main(int argc, char *argv[])
 												printf("Option selected\n");
 												if (strcmp(buffer, "1") == 0)
 												{
-													games[u]->player1->option = 1;
+													games[u]->player1->option = ROCK;
 												}
 												else if (strcmp(buffer, "2") == 0)
 												{
-													games[u]->player1->option = 2;
+													games[u]->player1->option = PAPER;
 												}
 												else if (strcmp(buffer, "3") == 0)
 												{
-													games[u]->player1->option = 3;
+													games[u]->player1->option = SCISSORS;
 												}
 											}
 											else if (games[u]->player2->socket == i)
@@ -433,15 +480,15 @@ int main(int argc, char *argv[])
 												printf("Option selected\n");
 												if (strcmp(buffer, "1") == 0)
 												{
-													games[u]->player2->option = 1;
+													games[u]->player2->option = ROCK;
 												}
 												else if (strcmp(buffer, "2") == 0)
 												{
-													games[u]->player2->option = 2;
+													games[u]->player2->option = PAPER;
 												}
 												else if (strcmp(buffer, "3") == 0)
 												{
-													games[u]->player2->option = 3;
+													games[u]->player2->option = SCISSORS;
 												}
 											}
 										}
