@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <sys/types.h>
 #include <netdb.h>
 #include <string.h>
@@ -76,6 +77,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "client: failed to create socket\n");
 		return 2;
 	}
+	int flag = 1;
+	setsockopt(sockFD, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
 	struct sockaddr_in addres;
 	socklen_t sa_len;
 	sa_len = sizeof(addres);
@@ -169,7 +172,12 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp(command, "SPEC") == 0)
 		{
-			printf("game: %s\n", msgToPrint);
+			memset(&input, 0, sizeof(input));
+			printf("%s\n", msgToPrint);
+			fgets(input, sizeof(input), stdin);
+			sprintf(msgToSend, "OPT %s", input);
+			numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
+			printf("[<]Sent %d bytes\n", numBytes);
 		}
 
 		else if (strcmp(command, "MSG") == 0)
