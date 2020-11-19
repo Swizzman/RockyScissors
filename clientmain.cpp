@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 		return 2;
 	}
 	int flag = 1;
-	setsockopt(sockFD, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
+	setsockopt(sockFD, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int));
 	struct sockaddr_in addres;
 	socklen_t sa_len;
 	sa_len = sizeof(addres);
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
 	if (strcmp(servMsg, protocol) == 0)
 	{
 		printf("Protocol supported\n");
-		numBytes = send(sockFD, "CONACC 1\n", strlen("CONACC 1\n"), 0);
+		numBytes = send(sockFD, "CONA \n", strlen("CONA \n"), 0);
 		printf("[<]Sent %d bytes\n", numBytes);
 	}
 	else
@@ -104,86 +104,102 @@ int main(int argc, char *argv[])
 		close(sockFD);
 		exit(0);
 	}
-
+	int itr = 0;
 	while (true)
 	{
 		memset(&msgToSend, 0, sizeof(msgToSend));
 		memset(&input, 0, sizeof(input));
-		memset(&command, 0, sizeof(command));
 		memset(&servMsg, 0, sizeof(servMsg));
-		memset(&msgToPrint, 0, sizeof(msgToPrint));
 
+		memset(&command, 0, sizeof(command));
+		memset(&msgToPrint, 0, sizeof(msgToPrint));
 		if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) < 0)
 		{
 			break;
 		}
-
-		// printf("[<]Recieved %d bytes\n", numBytes);
-		// printf("%s\n", servMsg);
-		sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
-		if (strcmp(command, "MENU") == 0)
+		// std::cout << servMsg << std::endl;
+		std::string msgTemp = servMsg;
+		while (strlen(servMsg) > strlen(msgToPrint) + strlen(command))
 		{
-			printf("Please select:\n1. Play\n2. Watch\n");
-			fgets(input, sizeof(input), stdin);
-			if ((strcmp(input, "1\n") == 0) || (strcmp(input, "2\n") == 0))
+			// printf("[<]Recieved %d bytes\n", numBytes);
+			// printf("%s\n", servMsg);
+			std::cout << "Message nr: " << itr << std::endl;
+			sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
+			// std::cout << "ServMsgSize: " << strlen(servMsg) << std::endl;
+			// std::cout << "Scanned Size: " << strlen(msgToPrint) + strlen(command) + 2 << std::endl;
+			// std::cout << command << msgToPrint << std::endl;
+			if (strcmp(command, "MENU") == 0)
 			{
-				sprintf(msgToSend, "OPT %s", input);
+				printf("Please select:\n1. Play\n2. Watch\n");
+				fgets(input, sizeof(input), stdin);
+				if ((strcmp(input, "1\n") == 0) || (strcmp(input, "2\n") == 0))
+				{
+					sprintf(msgToSend, "OPTN %s", input);
+					numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
+					printf("[<]Sent %d bytes\n", numBytes);
+				}
+				else
+				{
+					printf("Wrong input!\n");
+				}
+			}
+			else if (strcmp(command, "REDY") == 0)
+			{
+				printf("Game is ready\n");
+				numBytes = send(sockFD, "REDY \n", strlen("REDY \n"), 0);
+				printf("[<]Sent %d bytes\n", numBytes);
+			}
+			else if (strcmp(command, "STRT") == 0)
+			{
+				printf("Please select an option\n1.Rock\n2.Paper\n3.Scissor\n");
+				fgets(input, sizeof(input), stdin);
+				if (strchr(input, '1') != NULL)
+				{
+					printf("You have selected Rock!\n");
+					numBytes = send(sockFD, "OPTN 1\n", strlen("OPTN 1\n"), 0);
+					printf("[<]Sent %d bytes\n", numBytes);
+				}
+				else if (strchr(input, '2') != NULL)
+				{
+					printf("You have selected Paper!\n");
+					numBytes = send(sockFD, "OPTN 2\n", strlen("OPTN 2\n"), 0);
+					printf("[<]Sent %d bytes\n", numBytes);
+				}
+				else if (strchr(input, '3') != NULL)
+				{
+					printf("You have selected Scissor!\n");
+					numBytes = send(sockFD, "OPTN 3\n", strlen("OPTN 3\n"), 0);
+					printf("[<]Sent %d bytes\n", numBytes);
+				}
+			}
+			else if (strcmp(command, "OVER") == 0)
+			{
+				printf("Game Over\n");
+				numBytes = send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+			}
+			else if (strcmp(command, "SPEC") == 0)
+			{
+				memset(&input, 0, sizeof(input));
+				printf("%s\n", msgToPrint);
+				fgets(input, sizeof(input), stdin);
+				sprintf(msgToSend, "OPTN %s", input);
 				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
 				printf("[<]Sent %d bytes\n", numBytes);
 			}
-			else
-			{
-				printf("Wrong input!\n");
-			}
-		}
-		else if (strcmp(command, "RDY") == 0)
-		{
-			printf("Game is ready\n");
-			numBytes = send(sockFD, "RDY \n", strlen("RDY \n"), 0);
-			printf("[<]Sent %d bytes\n", numBytes);
-		}
-		else if (strcmp(command, "START") == 0)
-		{
-			printf("Please select an option\n1.Rock\n2.Paper\n3.Scissor\n");
-			fgets(input, sizeof(input), stdin);
-			if (strchr(input, '1') != NULL)
-			{
-				printf("You have selected Rock!\n");
-				numBytes = send(sockFD, "OPT 1\n", strlen("OPT 1\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-			}
-			else if (strchr(input, '2') != NULL)
-			{
-				printf("You have selected Paper!\n");
-				numBytes = send(sockFD, "OPT 2\n", strlen("OPT 2\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-			}
-			else if (strchr(input, '3') != NULL)
-			{
-				printf("You have selected Scissor!\n");
-				numBytes = send(sockFD, "OPT 3\n", strlen("OPT 3\n"), 0);
-				printf("[<]Sent %d bytes\n", numBytes);
-			}
-		}
-		else if (strcmp(command, "OVER") == 0)
-		{
-			printf("Game Over\n");
-			numBytes = send(sockFD, "RESET \n", strlen("RESET \n"), 0);
-		}
-		else if (strcmp(command, "SPEC") == 0)
-		{
-			memset(&input, 0, sizeof(input));
-			printf("%s\n", msgToPrint);
-			fgets(input, sizeof(input), stdin);
-			sprintf(msgToSend, "OPT %s", input);
-			numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
-			printf("[<]Sent %d bytes\n", numBytes);
-		}
 
-		else if (strcmp(command, "MSG") == 0)
-		{
-			printf("%s\n", msgToPrint);
+			else if (strcmp(command, "MESG") == 0)
+			{
+				printf("%s\n", msgToPrint);
+			}
+			itr++;
+
+			msgTemp.erase(0, strlen(command) + strlen(msgToPrint) + 2);
+			strcpy(servMsg, msgTemp.c_str());
+
+			memset(&command, 0, sizeof(command));
+			memset(&msgToPrint, 0, sizeof(msgToPrint));
 		}
+		itr = 0;
 	}
 	close(sockFD);
 }
