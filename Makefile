@@ -17,7 +17,5 @@ sspd: servermain.o
 	$(CXX) -L./ -Wall -lpthread -o sspd servermain.o 
 
 
-
-
 clean:
 	rm *.o *.a sspd sspgame

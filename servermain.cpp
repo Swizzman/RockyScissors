@@ -16,7 +16,6 @@
 #include <regex.h>
 #include <time.h>
 #include <thread>
-#include <pthread.h>
 #include <cstdint>
 #include <chrono>
 #include <vector>
@@ -30,25 +29,30 @@
 #define MAX_THREADS 10
 #define MSGSIZE 256
 #define BUFFERSIZE 512
-#define WINMSG "MESG You won!\n"
-#define LOSSMSG "MESG You lost!\n"
+#define WINMSG "%sMESG You won!\nMESG Score %d - %d\n"
+#define LOSSMSG "%sMESG You lost!\nMESG Score %d - %d\n"
 #define DISCOMSG "MESG A player disconnected, ending game!\n"
 #define CLEARMSG "CLEARCON 1\n"
 #define ERRORINPUT "EROR Wrong Input\n"
+#define PLAYINPUT "1"
+#define WATCHINPUT "2"
+#define SCOREINPUT "3"
+#define EXITINPUT "0"
+#define ROCKINPUT "1"
+#define PAPERINPUT "2"
+#define SCISSORINPUT "3"
 struct client
 {
 	char *address;
 	uint16_t port, socket, score = 0, option = 0;
-	bool inMenu = true, ready = false, inGame = false, isSpectator = false;
+	bool inMenu = true, ready = false, inGame = false, isSpectator = false, selected = false, started = false, disconnected = false;
 	double allResponseTime;
 	clock_t lastMsg;
 	clock_t timeOut;
 };
 struct game
 {
-	client *player1;
-	client *player2;
-	client *spectators[MAX_SPECTATORS];
+	client *player1, *player2, *spectators[MAX_SPECTATORS];
 	time_t startTime;
 	int nrOfSpectators = 0, rounds = 0;
 	bool gameOver = false;
@@ -59,6 +63,7 @@ game **games = new game *[MAX_GAMES] { nullptr };
 std::thread **threads = new std::thread *[MAX_THREADS] { nullptr };
 uint16_t numBytes;
 std::vector<double> scores;
+
 void resetPlayer(client *player)
 {
 	if (player)
@@ -66,12 +71,16 @@ void resetPlayer(client *player)
 
 		player->option = 0;
 		player->ready = false;
+		player->started = false;
+		player->selected = false;
 		player->score = 0;
+		player->allResponseTime = 0;
 		if (player->isSpectator)
 		{
 			player->inMenu = true;
 		}
 		player->isSpectator = false;
+		player->inGame = false;
 		send(player->socket, "OVER \n", strlen("OVER \n"), 0);
 	}
 }
@@ -95,41 +104,52 @@ void removeSpectatorFromGame(client *client)
 		}
 	}
 }
-void removeClient(int socket)
+void deleteClient(const int &index)
 {
-	bool found = false;
-	for (int h = 0; h < nrOfClients && !found; h++)
+	delete clients[index];
+	for (int j = index; j < nrOfClients; j++)
 	{
-		if (clients[h]->socket == socket)
+		if (clients[j + 1] != nullptr)
 		{
-			if (clients[h]->inGame && clients[h]->isSpectator)
+
+			clients[j] = clients[j + 1];
+		}
+	}
+	nrOfClients--;
+	std::cout << "Clients left: " << nrOfClients << std::endl;
+}
+void disconnectionHandler()
+{
+	bool marked = false;
+	while (true)
+	{
+		for (int i = 0; i < nrOfClients; ++i)
+		{
+			if (clients[i]->disconnected)
 			{
-				removeSpectatorFromGame(clients[h]);
-			}
-			else if (clients[h]->inGame)
-			{
-				for (int k = 0; k < nrOfGames && !found; k++)
+				if (clients[i]->isSpectator)
 				{
-					if (games[k]->player1->socket == clients[h]->socket ||
-						games[k]->player2->socket == clients[h]->socket)
+					removeSpectatorFromGame(clients[i]);
+					deleteClient(i);
+				}
+				else if (clients[i]->inGame)
+				{
+
+					for (int j = 0; j < nrOfGames && !marked; ++j)
 					{
-						games[k]->gameOver = true;
-						found = true;
+						if (clients[i] == games[j]->player1 || clients[i] == games[j]->player2)
+						{
+							games[j]->gameOver = true;
+							marked = true;
+						}
 					}
 				}
-			}
-
-			delete clients[h];
-			for (int y = h; y < nrOfClients; y++)
-			{
-				if (clients[y + 1] != nullptr)
+				else
 				{
-
-					clients[y] = clients[y + 1];
+					marked = false;
+					deleteClient(i);
 				}
 			}
-			nrOfClients--;
-			found = true;
 		}
 	}
 }
@@ -152,17 +172,24 @@ void checkGames(void)
 				memset(&tempMsg, 0, sizeof(tempMsg));
 				threads[i]->join();
 				sprintf(tempMsg, "MESG Score: %d - %d\n", games[i]->player1->score, games[i]->player2->score);
+
 				if (games[i]->player1->score >= 3)
 				{
 					sprintf(specMsg, "%sMESG Player 1 won, Score: %d - %d\n", CLEARMSG, games[i]->player1->score, games[i]->player2->score);
-					sprintf(player1Msg, "%s%s%s", CLEARMSG, WINMSG, tempMsg);
-					sprintf(player2Msg, "%s%s%s", CLEARMSG, LOSSMSG, tempMsg);
+					sprintf(player1Msg, WINMSG, CLEARMSG, games[i]->player1->score, games[i]->player2->score);
+					sprintf(player2Msg, LOSSMSG, CLEARMSG, games[i]->player2->score, games[i]->player1->score);
+					scores.push_back(games[i]->player1->allResponseTime / games[i]->rounds);
+					scores.push_back(games[i]->player2->allResponseTime / games[i]->rounds);
+					std::sort(scores.begin(), scores.end());
 				}
 				else if (games[i]->player2->score >= 3)
 				{
 					sprintf(specMsg, "%sMESG Player 2 won, Score: %d - %d\n", CLEARMSG, games[i]->player1->score, games[i]->player2->score);
-					sprintf(player1Msg, "%s%s%s", CLEARMSG, LOSSMSG, tempMsg);
-					sprintf(player2Msg, "%s%s%s", CLEARMSG, WINMSG, tempMsg);
+					sprintf(player1Msg, LOSSMSG, CLEARMSG, games[i]->player1->score, games[i]->player2->score);
+					sprintf(player2Msg, WINMSG, CLEARMSG, games[i]->player2->score, games[i]->player1->score);
+					scores.push_back(games[i]->player1->allResponseTime / games[i]->rounds);
+					scores.push_back(games[i]->player2->allResponseTime / games[i]->rounds);
+					std::sort(scores.begin(), scores.end());
 				}
 				else
 				{
@@ -170,13 +197,11 @@ void checkGames(void)
 					sprintf(player1Msg, "%s%s", CLEARMSG, DISCOMSG);
 					sprintf(player2Msg, "%s%s", CLEARMSG, DISCOMSG);
 				}
-				send(games[i]->player1->socket, player1Msg, strlen(player1Msg), 0);
-				send(games[i]->player2->socket, player2Msg, strlen(player2Msg), 0);
+
 				resetPlayer(games[i]->player1);
 				resetPlayer(games[i]->player2);
-				scores.push_back(games[i]->player1->allResponseTime / games[i]->rounds);
-				scores.push_back(games[i]->player2->allResponseTime / games[i]->rounds);
-				std::sort(scores.begin(), scores.end());
+				send(games[i]->player1->socket, player1Msg, strlen(player1Msg), 0);
+				send(games[i]->player2->socket, player2Msg, strlen(player2Msg), 0);
 				for (int j = 0; j < games[i]->nrOfSpectators; j++)
 				{
 					send(games[i]->spectators[j]->socket, specMsg, strlen(specMsg), 0);
@@ -210,7 +235,7 @@ void playGame(game *game)
 	{
 		memset(&specMsg, 0, sizeof(specMsg));
 
-		if (game != nullptr)
+		if (game != nullptr && game->player1 && game->player2)
 		{
 
 			if (game->player1->score >= 3 || game->player2->score >= 3)
@@ -236,52 +261,63 @@ void playGame(game *game)
 					{
 						sprintf(specMsg, "MESG Game will start in %d seconds\n", counter);
 						numBytes = send(game->player1->socket, specMsg, strlen(specMsg), 0);
-						printf("[<]Sent %d bytes\n", numBytes);
 						numBytes = send(game->player2->socket, specMsg, strlen(specMsg), 0);
-						printf("[<]Sent %d bytes\n", numBytes);
-
 						for (int i = 0; i < game->nrOfSpectators; i++)
 						{
 							if (game->spectators[i])
 							{
 								numBytes = send(game->spectators[i]->socket, specMsg, strlen(specMsg), 0);
-								printf("[<]Sent %d bytes\n", numBytes);
 							}
 						}
 					}
 				}
 				else if (!startSent && counter == 0)
 				{
-
-					numBytes = send(game->player1->socket, "STRT \n", strlen("STRT \n"), 0);
+					game->rounds++;
+					char roundStr[20];
+					sprintf(roundStr, "MESG Round %d\n", game->rounds);
+					std::cout << "Round " << game->rounds << std::endl;
+					send(game->player1->socket, roundStr, strlen(roundStr), 0);
+					send(game->player1->socket, "STRT \n", strlen("STRT \n"), 0);
+					send(game->player2->socket, roundStr, strlen(roundStr), 0);
+					send(game->player2->socket, "STRT \n", strlen("STRT \n"), 0);
+					for (int i = 0; i < game->nrOfSpectators; i++)
+					{
+						send(game->spectators[i]->socket, roundStr, strlen(roundStr),0);
+					}
 					game->player1->lastMsg = clock();
-					numBytes = send(game->player2->socket, "STRT \n", strlen("STRT \n"), 0);
 					game->player2->lastMsg = clock();
 					game->player1->option = 0;
+					game->player1->selected = false;
+					game->player1->started = true;
+					game->player2->selected = false;
+					game->player2->started = true;
 					game->player2->option = 0;
 					game->player1->timeOut = clock();
-					game->player2->timeOut = game->player1->timeOut;
-
+					game->player2->timeOut = clock();
+					
 					startSent = true;
 				}
 				else if (counter <= 0)
 				{
 					now = clock();
-					if ((now - game->player1->timeOut) / CLOCKS_PER_SEC > 2 && game->player1->option == 0)
+					if ((now - game->player1->timeOut) / CLOCKS_PER_SEC > 3 && game->player1->option == 0)
 					{
 						game->player2->score++;
+						game->player1->selected = true;
 						sprintf(player1Msg, "MESG You did not make a selection, automatic loss of round\nMESG score %d - %d\n", game->player1->score, game->player2->score);
 						sprintf(player2Msg, "MESG Other player didn't select, you won the round\nMESG score %d - %d\n", game->player2->score, game->player1->score);
-						sprintf(specMsg, "MESG Player 1 didn't select\nMESG score %d - %d\n", game->player1->score, game->player2->score);
+						sprintf(specMsg, "MESG Player 1 didn't select, Player 2 Wins\nMESG score %d - %d\n", game->player1->score, game->player2->score);
 						game->player1->allResponseTime += 2.f;
 						game->player1->option = (uint16_t)-1;
 					}
-					if ((now - game->player2->timeOut) / CLOCKS_PER_SEC > 2 && game->player2->option == 0)
+					if ((now - game->player2->timeOut) / CLOCKS_PER_SEC > 3 && game->player2->option == 0)
 					{
 						game->player1->score++;
+						game->player2->selected = true;
 						sprintf(player2Msg, "MESG You did not make a selection, automatic loss of round\nMESG score %d - %d\n", game->player2->score, game->player1->score);
 						sprintf(player1Msg, "MESG Other player didn't select, you won the round\nMESG score %d - %d\n", game->player1->score, game->player2->score);
-						sprintf(specMsg, "MESG Player 2 didn't select\nMESG score %d - %d\n", game->player1->score, game->player2->score);
+						sprintf(specMsg, "MESG Player 2 didn't select, Player 1 wins\nMESG score %d - %d\n", game->player1->score, game->player2->score);
 						game->player2->allResponseTime += 2.f;
 						game->player2->option = (uint16_t)-1;
 					}
@@ -330,7 +366,6 @@ void playGame(game *game)
 								if (game->spectators[i])
 								{
 									numBytes = send(game->spectators[i]->socket, specMsg, strlen(specMsg), 0);
-									printf("[<]Sent %d bytes\n", numBytes);
 								}
 							}
 							if ((game->player1->option == ROCK && game->player2->option == SCISSORS) ||
@@ -363,29 +398,43 @@ void playGame(game *game)
 							}
 						}
 						send(game->player1->socket, player1Msg, strlen(player1Msg), 0);
-
 						send(game->player2->socket, player2Msg, strlen(player2Msg), 0);
-
 
 						for (int i = 0; i < game->nrOfSpectators; ++i)
 						{
 							if (game->spectators[i])
 							{
 								numBytes = send(game->spectators[i]->socket, specMsg, strlen(specMsg), 0);
-								printf("[<]Sent %d bytes\n", numBytes);
 							}
 						}
 
 						game->player1->option = 0;
 						game->player2->option = 0;
+						game->player1->started = false;
+						game->player2->started = false;
 						counter = 4;
 						startSent = false;
-						game->rounds++;
 					}
 				}
 			}
 		}
 	}
+}
+void sendSpec(client *theClient)
+{
+	char msgToSend[BUFFERSIZE];
+	theClient->isSpectator = true;
+	sprintf(msgToSend, "SPEC %d\n", nrOfGames);
+	char temp[BUFFERSIZE];
+	for (int k = 0; k < nrOfGames; k++)
+	{
+		memset(&temp, 0, sizeof(temp));
+		sprintf(temp, "SPEC game %d: Score %d - %d\n", k + 1, games[k]->player1->score, games[k]->player2->score);
+		strcat(msgToSend, temp);
+	}
+	numBytes = send(theClient->socket, msgToSend, strlen(msgToSend), 0);
+	theClient->lastMsg = clock();
+	theClient->inMenu = false;
 }
 int main(int argc, char *argv[])
 {
@@ -401,19 +450,14 @@ int main(int argc, char *argv[])
 	socklen_t theirAddr_len = sizeof(theirAddr);
 
 	uint8_t returnValue;
-	uint16_t sockFD;
-	uint16_t tempSFD;
+	uint16_t sockFD, tempSFD;
 
-	fd_set master;
-	fd_set read_sds;
-	int fDMax;
+	fd_set master, read_sds;
 
-	char clientMsg[MSGSIZE];
-	int clientMsgLen = sizeof(clientMsg);
-	char msgToSend[MSGSIZE];
-	char command[30];
-	char buffer[BUFFERSIZE];
-	char protocol[20] = "RPS TCP 1\n";
+	char clientMsg[MSGSIZE], msgToSend[MSGSIZE], buffer[BUFFERSIZE], command[30], protocol[20] = "RPS TCP 1\n";
+
+	client *clientQueue[10];
+	int clientMsgLen = sizeof(clientMsg), clientsInQueue = 0, fDMax;
 
 	FD_ZERO(&master);
 	FD_ZERO(&read_sds);
@@ -422,9 +466,6 @@ int main(int argc, char *argv[])
 	guide.ai_family = AF_INET;
 	guide.ai_socktype = SOCK_STREAM;
 	guide.ai_flags = AI_PASSIVE;
-
-	client *clientQueue[10];
-	int clientsInQueue = 0;
 
 	if (argc == 3)
 	{
@@ -493,6 +534,7 @@ int main(int argc, char *argv[])
 	FD_SET(sockFD, &master);
 	fDMax = sockFD;
 	std::thread supervisorThread(checkGames);
+	std::thread disconnectionThread(disconnectionHandler);
 	while (true)
 	{
 
@@ -524,9 +566,7 @@ int main(int argc, char *argv[])
 						clients[nrOfClients]->address = inet_ntoa(theirAddr.sin_addr);
 						clients[nrOfClients]->port = ntohs(theirAddr.sin_port);
 						clients[nrOfClients]->socket = tempSFD;
-						printf("%s", protocol);
 						numBytes = send(clients[nrOfClients]->socket, protocol, strlen(protocol), 0);
-						printf("[<]Sent %d bytes\n", numBytes);
 
 						FD_SET(clients[nrOfClients]->socket, &master);
 						if (clients[nrOfClients]->socket > fDMax)
@@ -558,9 +598,13 @@ int main(int argc, char *argv[])
 								}
 							}
 
-							removeClient(i);
-
-							printf("Clients: %d\n", nrOfClients);
+							for (int k = 0; k < nrOfClients; ++k)
+							{
+								if (clients[k]->socket == i)
+								{
+									clients[k]->disconnected = true;
+								}
+							}
 
 							close(i);
 						}
@@ -574,6 +618,7 @@ int main(int argc, char *argv[])
 					}
 					else
 					{
+
 						sscanf(clientMsg, "%s %[^\n]", command, buffer);
 						struct sockaddr_in addres;
 						socklen_t sa_len;
@@ -587,7 +632,7 @@ int main(int argc, char *argv[])
 						{
 							if (strcmp(bobp, clients[b]->address) == 0 && ntohs(addres.sin_port) == clients[b]->port)
 							{
-								if (strcmp(command, "CONA") == 0 || strcmp(command, "RSET") == 0)
+								if (strcmp(command, "CONACC") == 0 || strcmp(command, "RESET") == 0)
 								{
 									if (clients[b]->isSpectator)
 									{
@@ -599,50 +644,34 @@ int main(int argc, char *argv[])
 									clients[b]->isSpectator = false;
 									clients[b]->inGame = false;
 									clients[b]->lastMsg = clock();
-									printf("[<]Sent %d bytes\n", numBytes);
 								}
-								else if (strcmp(command, "OPTN") == 0)
+								else if (strcmp(command, "OPTION") == 0)
 								{
 									if (clients[b]->inMenu == true)
 									{
-										if (strcmp(buffer, "1") == 0)
+										if (strcmp(buffer, PLAYINPUT) == 0)
 										{
 											clients[b]->inMenu = false;
 											clientQueue[clientsInQueue] = clients[b];
 											clientsInQueue++;
 											if (clientsInQueue >= 2)
 											{
-												numBytes = send(clientQueue[0]->socket, "REDY\0", strlen("REDY\0"), 0);
+												numBytes = send(clientQueue[0]->socket, "READY\0", strlen("READY\0"), 0);
 												clientQueue[0]->lastMsg = clock();
-												printf("[<]Sent %d bytes\n", numBytes);
 
-												numBytes = send(clientQueue[1]->socket, "REDY\0", strlen("REDY\0"), 0);
+												numBytes = send(clientQueue[1]->socket, "READY\0", strlen("READY\0"), 0);
 												clientQueue[1]->lastMsg = clock();
-												printf("[<]Sent %d bytes\n", numBytes);
 											}
 											else
 											{
 												send(clientQueue[0]->socket, "MESG One more player required to start game\n", strlen("MESG One more player required to start game\n"), 0);
 											}
 										}
-										else if (strcmp(buffer, "2") == 0)
+										else if (strcmp(buffer, WATCHINPUT) == 0)
 										{
-											clients[b]->isSpectator = true;
-											sprintf(msgToSend, "SPEC %d\n", nrOfGames);
-											char temp[BUFFERSIZE];
-											for (int k = 0; k < nrOfGames; k++)
-											{
-												memset(&temp, 0, sizeof(temp));
-												sprintf(temp, "SPEC game %d: Score %d - %d\n", k + 1, games[k]->player1->score, games[k]->player2->score);
-												strcat(msgToSend, temp);
-											}
-											numBytes = send(clients[b]->socket, msgToSend, strlen(msgToSend), 0);
-											clients[b]->lastMsg = clock();
-
-											clients[b]->inMenu = false;
-											printf("[<]Sent %d bytes\n", numBytes);
+											sendSpec(clients[b]);
 										}
-										else if (strcmp(buffer, "3") == 0)
+										else if (strcmp(buffer, SCOREINPUT) == 0)
 										{
 											char temp[BUFFERSIZE];
 
@@ -650,43 +679,46 @@ int main(int argc, char *argv[])
 											for (int k = 0; k < (int)scores.size(); k++)
 											{
 												memset(&temp, 0, sizeof(temp));
-												sprintf(temp, "SCORE %lf\n", scores[k]);
+												sprintf(temp, "SCORE %lf seconds\n", scores[k]);
 												strcat(msgToSend, temp);
 											}
 											numBytes = send(clients[b]->socket, msgToSend, strlen(msgToSend), 0);
-											clients[b]->lastMsg = clock();
-
-											printf("[<]Sent %d bytes\n", numBytes);
-
 											clients[b]->inMenu = false;
 										}
-										else if (strcmp(buffer, "0") == 0)
+										else if (strcmp(buffer, EXITINPUT) == 0)
 										{
 											send(clients[b]->socket, "QUIT 1\n", strlen("QUIT 1\n"), 0);
-											removeClient(clients[b]->socket);
-											std::cout << "Client left\nClients left: " << nrOfClients << std::endl;
+											clients[b]->disconnected = true;
 											close(i);
 											FD_CLR(i, &master);
 										}
 										else
 										{
-
 											send(clients[b]->socket, ERRORINPUT, strlen(ERRORINPUT), 0);
 										}
 									}
 									else if (clients[b]->isSpectator)
 									{
-										int temp = atoi(buffer);
-										temp--;
-										std::cout << temp << std::endl;
-										if (temp < nrOfGames && temp >= 0)
+										if (strcmp(buffer, "-1") == 0)
 										{
-											games[temp]->spectators[games[temp]->nrOfSpectators++] = clients[b];
-											send(clients[b]->socket, "SPECACC \n", strlen("SPECACC \n"), 0);
+											removeSpectatorFromGame(clients[b]);
+											sendSpec(clients[b]);
 										}
 										else
 										{
-											send(clients[b]->socket, "SPECREJ \n", strlen("SPECREJ \n"), 0);
+
+											int temp = atoi(buffer);
+											temp--;
+											std::cout << temp << std::endl;
+											if (temp < nrOfGames && temp >= 0)
+											{
+												games[temp]->spectators[games[temp]->nrOfSpectators++] = clients[b];
+												send(clients[b]->socket, "SPECACC \n", strlen("SPECACC \n"), 0);
+											}
+											else
+											{
+												send(clients[b]->socket, "SPECREJ \n", strlen("SPECREJ \n"), 0);
+											}
 										}
 									}
 									else
@@ -696,52 +728,65 @@ int main(int argc, char *argv[])
 										{
 											if (games[u]->player1->socket == i)
 											{
-												if (strcmp(buffer, "1") == 0)
+												if (games[u]->player1->started)
 												{
-													games[u]->player1->option = ROCK;
-												}
-												else if (strcmp(buffer, "2") == 0)
-												{
-													games[u]->player1->option = PAPER;
-												}
-												else if (strcmp(buffer, "3") == 0)
-												{
-													games[u]->player1->option = SCISSORS;
-												}
-												else
-												{
-													send(clients[b]->socket, ERRORINPUT, strlen(ERRORINPUT), 0);
-												}
 
-												double responseTimeInSec = (double)(clock() - games[u]->player1->lastMsg) / CLOCKS_PER_SEC;
-												games[u]->player1->allResponseTime += responseTimeInSec;
+													if (strcmp(buffer, ROCKINPUT) == 0)
+													{
+														games[u]->player1->option = ROCK;
+													}
+													else if (strcmp(buffer, PAPERINPUT) == 0)
+													{
+														games[u]->player1->option = PAPER;
+													}
+													else if (strcmp(buffer, SCISSORINPUT) == 0)
+													{
+														games[u]->player1->option = SCISSORS;
+													}
+													else
+													{
+														send(clients[b]->socket, ERRORINPUT, strlen(ERRORINPUT), 0);
+													}
+													if (!games[u]->player1->selected && games[u]->player1->option > 0)
+													{
+														games[u]->player1->selected = true;
+														double responseTimeInSec = (double)(clock() - games[u]->player1->lastMsg) / CLOCKS_PER_SEC;
+														games[u]->player1->allResponseTime += responseTimeInSec;
+													}
+												}
 											}
 											else if (games[u]->player2->socket == i)
 											{
-												if (strcmp(buffer, "1") == 0)
+												if (games[u]->player2->started)
 												{
-													games[u]->player2->option = ROCK;
+													if (strcmp(buffer, ROCKINPUT) == 0)
+													{
+														games[u]->player2->option = ROCK;
+													}
+													else if (strcmp(buffer, PAPERINPUT) == 0)
+													{
+														games[u]->player2->option = PAPER;
+													}
+													else if (strcmp(buffer, SCISSORINPUT) == 0)
+													{
+														games[u]->player2->option = SCISSORS;
+													}
+													else
+													{
+														send(clients[b]->socket, ERRORINPUT, strlen(ERRORINPUT), 0);
+													}
+													if (!games[u]->player2->selected && games[u]->player2->option > 0)
+													{
+														games[u]->player2->selected = true;
+														double responseTimeInSec = (double)(clock() - games[u]->player2->lastMsg) / CLOCKS_PER_SEC;
+														games[u]->player2->allResponseTime += responseTimeInSec;
+													}
 												}
-												else if (strcmp(buffer, "2") == 0)
-												{
-													games[u]->player2->option = PAPER;
-												}
-												else if (strcmp(buffer, "3") == 0)
-												{
-													games[u]->player2->option = SCISSORS;
-												}
-												else
-												{
-													send(clients[b]->socket, ERRORINPUT, strlen(ERRORINPUT), 0);
-												}
-
-												double responseTimeInSec = (double)(clock() - games[u]->player2->lastMsg) / CLOCKS_PER_SEC;
-												games[u]->player2->allResponseTime += responseTimeInSec;
 											}
 										}
 									}
 								}
-								else if (strcmp(command, "REDY") == 0)
+								else if (strcmp(command, "READY") == 0)
 								{
 									clients[b]->ready = true;
 									if (clientsInQueue >= 2)
@@ -790,17 +835,24 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
+	for (int i = 0; i < nrOfThreads; i++)
+	{
+		threads[i]->join();
+		delete threads[i];
+	}
+	delete[] games;
 	for (int i = 0; i < nrOfGames; i++)
 	{
-		delete [] games[i]->spectators;
+		delete games[i];
 	}
-	
+	delete[] games;
 	for (int i = 0; i < nrOfClients; i++)
 	{
 		close(clients[i]->socket);
-		delete clients[i];
+		clients[i]->disconnected = true;
 	}
 	delete[] clients;
 	supervisorThread.join();
+	disconnectionThread.join();
 	return 0;
 }

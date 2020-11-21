@@ -12,9 +12,6 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <iostream>
-#include <thread>
-#include <regex.h>
-/* You will to add includes here */
 
 uint16_t sockFD;
 int main(int argc, char *argv[])
@@ -34,7 +31,6 @@ int main(int argc, char *argv[])
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
 	char servMsg[500], msgToPrint[500], command[40], input[500], msgToSend[550];
-	int servMsg_Len = sizeof(servMsg);
 
 	memset(&servMsg, 0, sizeof(servMsg));
 	char protocol[20] = "RPS TCP 1\n";
@@ -77,13 +73,13 @@ int main(int argc, char *argv[])
 	inet_ntop(addres.sin_family, &addres.sin_addr, servAddr, bl);
 	printf("Connected to %s:%d\n", servAddr, ntohs(addres.sin_port));
 	freeaddrinfo(serverInfo);
-	numBytes = recv(sockFD, servMsg, servMsg_Len, 0);
+	numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0);
 
 	printf("Server protocol: %s", servMsg);
 	if (strcmp(servMsg, protocol) == 0)
 	{
 		printf("Protocol supported\n");
-		numBytes = send(sockFD, "CONA \n", strlen("CONA \n"), 0);
+		numBytes = send(sockFD, "CONACC \n", strlen("CONACC \n"), 0);
 		printf("[<]Sent %d bytes\n", numBytes);
 	}
 	else
@@ -129,13 +125,13 @@ int main(int argc, char *argv[])
 			{
 				if (spectating)
 				{
-					send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+					send(sockFD, "OPTION -1\n", strlen("OPTION -1\n"), 0);
 					spectating = false;
 				}
 				else
 				{
 					read(stdinSock, input, sizeof(input));
-					sprintf(msgToSend, "OPTN %s", input);
+					sprintf(msgToSend, "OPTION %s", input);
 					numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
 				}
 				FD_CLR(stdinSock, &read_sds);
@@ -156,11 +152,11 @@ int main(int argc, char *argv[])
 					{
 						printf("Please select:\n1. Play\n2. Watch\n3. Highscores\n0. Exit\n");
 					}
-					else if (strcmp(command, "REDY") == 0)
+					else if (strcmp(command, "READY") == 0)
 					{
 						system("clear");
 						printf("Game is ready\n");
-						numBytes = send(sockFD, "REDY \n", strlen("REDY \n"), 0);
+						numBytes = send(sockFD, "READY \n", strlen("READY \n"), 0);
 					}
 					else if (strcmp(command, "STRT") == 0)
 					{
@@ -170,12 +166,12 @@ int main(int argc, char *argv[])
 					{
 						if (spectating)
 						{
-							numBytes = send(sockFD, "OPTN 2\n", strlen("OPTN 2\n"), 0);
+							numBytes = send(sockFD, "OPTION 2\n", strlen("OPTION 2\n"), 0);
 							spectating = false;
 						}
 						else
 						{
-							numBytes = send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+							numBytes = send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 						}
 
 						printf("Game Over\n");
@@ -183,11 +179,10 @@ int main(int argc, char *argv[])
 					else if (strcmp(command, "SPEC") == 0)
 					{
 						bool stop = false;
-						std::cout << "Please type the number of the game you want to spectate\nAvailable games: \n";
-						memset(&input, 0, sizeof(input));
 						int nrOfGames = atoi(msgToPrint);
 						if (nrOfGames > 0)
 						{
+							std::cout << "Please type the number of the game you want to spectate\nAvailable games: \n";
 
 							for (int i = 0; i < nrOfGames && !stop; ++i)
 							{
@@ -207,20 +202,20 @@ int main(int argc, char *argv[])
 						else
 						{
 							std::cout << "No games available, returning to menu\n";
-							send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+							send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 						}
 					}
 					else if (strcmp(command, "SPECACC") == 0)
 					{
 						system("clear");
-						std::cout << "You are now spectating a game, press \"Enter\" to go back to the menu\n";
+						std::cout << "You are now spectating a game, press \"Enter\" the spectator menu\n";
 						spectating = true;
 					}
 					else if (strcmp(command, "SPECREJ") == 0)
 					{
 						std::cout << "Unable to spectate, game doesn't exist\n";
 
-						send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+						send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 					}
 					else if (strcmp(command, "SCORE") == 0)
 					{
@@ -228,7 +223,7 @@ int main(int argc, char *argv[])
 						memset(&input, 0, sizeof(input));
 						int nrOfScores = atoi(msgToPrint);
 						system("clear");
-						std::cout << "Thses are the average response times, sorted lowest to highest\nPress \"Enter\" To return to the menu\n";
+						std::cout << "These are the average response times, sorted lowest to highest\n";
 						if (nrOfScores > 0)
 						{
 
@@ -246,20 +241,12 @@ int main(int argc, char *argv[])
 									stop = true;
 								}
 							}
-							if (stop)
-							{
-								send(sockFD, "RSET \n", strlen("RSET \n"), 0);
-							}
-							else
-							{
-								spectating = true;
-							}
 						}
 						else
 						{
-							std::cout << "No scores available, returning to menu\n";
-							send(sockFD, "RSET \n", strlen("RSET \n"), 0);
+							std::cout << "No scores available!\n";
 						}
+							send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 					}
 					else if (strcmp(command, "MESG") == 0)
 					{
