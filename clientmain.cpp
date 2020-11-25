@@ -12,8 +12,9 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <iostream>
-
-uint16_t sockFD;
+#define BUFFERSIZE 512
+#define INPUTSIZE 256
+#define PROTOCOLSIZE 20
 int main(int argc, char *argv[])
 {
 
@@ -23,17 +24,17 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	uint16_t returnValue, numBytes;
+	uint16_t returnValue, numBytes, sockFD;
 
 	struct addrinfo hints, *serverInfo, *p;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
-	char servMsg[500], msgToPrint[500], command[40], input[500], msgToSend[550];
+	char servMsg[BUFFERSIZE], msgToPrint[BUFFERSIZE], command[BUFFERSIZE], input[INPUTSIZE], msgToSend[BUFFERSIZE];
 
 	memset(&servMsg, 0, sizeof(servMsg));
-	char protocol[20] = "RPS TCP 1\n";
+	char protocol[PROTOCOLSIZE] = "RPS TCP 1\n";
 	if ((returnValue = getaddrinfo(argv[1], argv[2], &hints, &serverInfo)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(returnValue));
@@ -96,9 +97,9 @@ int main(int argc, char *argv[])
 	FD_ZERO(&read_sds);
 	FD_SET(sockFD, &master);
 	FD_SET(fileno(stdin), &master);
-	int FDMax = fileno(stdin);
-	int stdinSock = fileno(stdin);
-	bool spectating = false;
+	int FDMax = fileno(stdin), stdinSock = fileno(stdin);
+	bool spectatorMode = false, scoreMode = false;
+	int scoreItr = 0, specItr = 0;
 	while (true)
 	{
 		if (sockFD > FDMax)
@@ -114,6 +115,8 @@ int main(int argc, char *argv[])
 		memset(&msgToPrint, 0, sizeof(msgToPrint));
 		read_sds = master;
 		numBytes = select(FDMax + 1, &read_sds, NULL, NULL, NULL);
+		//Using a c++ string to get access to the erase function later
+		std::string msgTemp;
 		if (numBytes < 1)
 		{
 			std::cout << "lost Connection\n";
@@ -123,29 +126,24 @@ int main(int argc, char *argv[])
 		{
 			if (FD_ISSET(stdinSock, &read_sds))
 			{
-				if (spectating)
-				{
-					send(sockFD, "OPTION -1\n", strlen("OPTION -1\n"), 0);
-					spectating = false;
-				}
-				else
-				{
-					read(stdinSock, input, sizeof(input));
-					sprintf(msgToSend, "OPTION %s", input);
-					numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
-				}
+
+				read(stdinSock, input, sizeof(input));
+				sprintf(msgToSend, "OPTION %s", input);
+				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
+
 				FD_CLR(stdinSock, &read_sds);
 			}
 			if (FD_ISSET(sockFD, &read_sds))
 			{
-				if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) < 0)
+				if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) <= 0)
 				{
+					std::cout << "Lost Connection to server\n";
 					break;
 				}
-				std::string msgTemp = servMsg;
-				while (strlen(servMsg) > strlen(command) + strlen(msgToPrint))
+				msgTemp = servMsg;
+				while (strlen(servMsg) > 0)
 				{
-
+					//Read the command and eventual message
 					sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
 
 					if (strcmp(command, "MENU") == 0)
@@ -155,8 +153,7 @@ int main(int argc, char *argv[])
 					else if (strcmp(command, "READY") == 0)
 					{
 						system("clear");
-						printf("Game is ready\n");
-						numBytes = send(sockFD, "READY \n", strlen("READY \n"), 0);
+						std::cout << "A game is ready, press \"Enter\" to accept\n";
 					}
 					else if (strcmp(command, "STRT") == 0)
 					{
@@ -164,97 +161,72 @@ int main(int argc, char *argv[])
 					}
 					else if (strcmp(command, "OVER") == 0)
 					{
-						if (spectating)
-						{
-							numBytes = send(sockFD, "OPTION 2\n", strlen("OPTION 2\n"), 0);
-							spectating = false;
-						}
-						else
-						{
-							numBytes = send(sockFD, "RESET \n", strlen("RESET \n"), 0);
-						}
-
-						printf("Game Over\n");
+						system("clear");
+						numBytes = send(sockFD, "RESET 1\n", strlen("RESET 1\n"), 0);
+						std::cout << "Game over\n";
 					}
 					else if (strcmp(command, "SPEC") == 0)
 					{
-						bool stop = false;
-						int nrOfGames = atoi(msgToPrint);
-						if (nrOfGames > 0)
+						if (!spectatorMode)
 						{
+							spectatorMode = true;
 							std::cout << "Please type the number of the game you want to spectate\nAvailable games: \n";
-
-							for (int i = 0; i < nrOfGames && !stop; ++i)
-							{
-								msgTemp.erase(0, strlen(command) + strlen(msgToPrint) + 2);
-								strcpy(servMsg, msgTemp.c_str());
-								sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
-								if (strcmp(command, "SPEC") == 0)
-								{
-									std::cout << msgToPrint << std::endl;
-								}
-								else
-								{
-									stop = true;
-								}
-							}
 						}
-						else
+						if (strcmp(msgToPrint, "NONE") != 0)
+						{
+							specItr++;
+							std::cout << msgToPrint << std::endl;
+						}
+					}
+					else if (strcmp(command, "SPECDONE") == 0)
+					{
+						spectatorMode = false;
+						if (specItr <= 0)
 						{
 							std::cout << "No games available, returning to menu\n";
 							send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 						}
+						specItr = 0;
 					}
 					else if (strcmp(command, "SPECACC") == 0)
 					{
 						system("clear");
-						std::cout << "You are now spectating a game, press \"Enter\" the spectator menu\n";
-						spectating = true;
+						std::cout << "You are now spectating a game, press \"Enter\" to go back to the spectator menu\n";
 					}
 					else if (strcmp(command, "SPECREJ") == 0)
 					{
-						std::cout << "Unable to spectate, game doesn't exist\n";
+						std::cout << "Unable to spectate, game doesn't exist\nReturning to menu";
 
 						send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 					}
 					else if (strcmp(command, "SCORE") == 0)
 					{
-						bool stop = false;
-						memset(&input, 0, sizeof(input));
-						int nrOfScores = atoi(msgToPrint);
-						system("clear");
-						std::cout << "These are the average response times, sorted lowest to highest\n";
-						if (nrOfScores > 0)
+						if (!scoreMode)
 						{
-
-							for (int i = 0; i < nrOfScores && !stop; i++)
-							{
-								msgTemp.erase(0, strlen(command) + strlen(msgToPrint) + 2);
-								strcpy(servMsg, msgTemp.c_str());
-								sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
-								if (strcmp(command, "SCORE") == 0)
-								{
-									std::cout << (i + 1) << ": " << msgToPrint << std::endl;
-								}
-								else
-								{
-									stop = true;
-								}
-							}
+							scoreMode = true;
+							system("clear");
+							std::cout << "These are the average response times, sorted lowest to highest\n";
 						}
-						else
+						if (strcmp(msgToPrint, "NONE") != 0)
 						{
+							scoreItr++;
+							std::cout << scoreItr << ": " << msgToPrint << std::endl;
+						}
+					}
+					else if (strcmp(command, "SCOREDONE") == 0)
+					{
+						if (scoreItr <= 0)
+						{
+							system("clear");
 							std::cout << "No scores available!\n";
 						}
-							send(sockFD, "RESET \n", strlen("RESET \n"), 0);
+						scoreMode = false;
+						scoreItr = 0;
+						send(sockFD, "RESET \n", strlen("RESET \n"), 0);
 					}
 					else if (strcmp(command, "MESG") == 0)
 					{
 						printf("%s\n", msgToPrint);
-					}
-					else if (strcmp(command, "CLEARCON") == 0)
-					{
-						system("clear");
 					}
 					else if (strcmp(command, "QUIT") == 0)
 					{
