@@ -18,4 +18,4 @@ sspd: servermain.o
 
 
 clean:
-	rm *.o *.a sspd sspgame
+	rm *.o sspd sspgame
