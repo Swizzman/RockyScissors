@@ -20,7 +20,9 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+//Patrick, ändra denna för att öka tiden innan timeout <3
 #define TIMEOUT 2
+
 #define ROCK 1
 #define PAPER 2
 #define SCISSORS 3
@@ -54,7 +56,6 @@ struct client
 struct game
 {
 	client *player1, *player2, *spectators[MAX_SPECTATORS];
-	clock_t startTime;
 	int nrOfSpectators = 0, rounds = 0;
 	bool gameOver = false;
 };
@@ -65,6 +66,7 @@ std::thread **threads = new std::thread *[MAX_THREADS] { nullptr };
 uint16_t numBytes;
 std::vector<double> scores;
 
+//Resets a player to its original state
 void resetPlayer(client *player)
 {
 	if (player)
@@ -84,6 +86,7 @@ void resetPlayer(client *player)
 		player->allResponseTime = 0.f;
 	}
 }
+//This function will remove a client from the list of spectators from a game
 void removeSpectatorFromGame(client *client)
 {
 	bool found;
@@ -136,6 +139,7 @@ void disconnectionHandler()
 					removeSpectatorFromGame(clients[i]);
 					deleteClient(i);
 				}
+				//If we are in a game or in the queue we need to wait before we delete it
 				else if (clients[i]->inGame || clients[i]->inQueue)
 				{
 					if (clients[i]->inQueue)
@@ -156,6 +160,7 @@ void disconnectionHandler()
 				}
 				else
 				{
+					//We should only delete a client when we are sure it won't cause a problem i.e: it's in the queue or in a game
 					marked = false;
 					deleteClient(i);
 				}
@@ -175,6 +180,7 @@ void checkGames(void)
 
 		for (int i = 0; i < nrOfGames; i++)
 		{
+			//If the game is over, join the thread
 			if (games[i]->gameOver)
 			{
 				memset(&player1Msg, 0, sizeof(player1Msg));
@@ -209,6 +215,7 @@ void checkGames(void)
 
 				resetPlayer(games[i]->player1);
 				resetPlayer(games[i]->player2);
+				//Don't need to send data to a disconnected client
 				if (!games[i]->player1->disconnected)
 				{
 					send(games[i]->player1->socket, player1Msg, strlen(player1Msg), 0);
@@ -222,6 +229,7 @@ void checkGames(void)
 					resetPlayer(games[i]->spectators[j]);
 					send(games[i]->spectators[j]->socket, specMsg, strlen(specMsg), 0);
 				}
+				//Remove the game and thread from the list
 				game *tempGame = games[i];
 				std::thread *tempThread = threads[i];
 				for (int j = i; j < nrOfGames; j++)
@@ -250,7 +258,7 @@ void playGame(game *game)
 	int counter = 4;
 	send(game->player1->socket, "MESG Game is now starting!\n", strlen("MESG Game is now starting\n"), 0);
 	send(game->player2->socket, "MESG Game is now starting!\n", strlen("MESG Game is now starting\n"), 0);
-	 while (!game->gameOver)
+	while (!game->gameOver)
 	{
 		memset(&player1Msg, 0, sizeof(player1Msg));
 		memset(&player2Msg, 0, sizeof(player2Msg));
@@ -291,6 +299,7 @@ void playGame(game *game)
 							}
 						}
 					}
+					//Send out the start message
 					else
 					{
 						game->rounds++;
@@ -320,6 +329,7 @@ void playGame(game *game)
 				}
 				else
 				{
+					//This is the timeout section
 					if ((time(NULL) - start) >= TIMEOUT)
 					{
 						if (game->player1->option == 0)
@@ -347,8 +357,10 @@ void playGame(game *game)
 							game->player2->option = (uint16_t)-1;
 						}
 					}
+					//If both players have selected, either through gameplay or timeout, enter here
 					if (game->player1->option > 0 && game->player2->option > 0)
 					{
+						//Edge case, no player selected
 						if (game->player1->option == (uint16_t)-1 && game->player2->option == (uint16_t)-1)
 						{
 							game->player1->score--;
@@ -392,6 +404,7 @@ void playGame(game *game)
 									numBytes = send(game->spectators[i]->socket, specMsg, strlen(specMsg), 0);
 								}
 							}
+							//The logic for the actual game
 							if ((game->player1->option == ROCK && game->player2->option == SCISSORS) ||
 								(game->player1->option == PAPER && game->player2->option == ROCK) ||
 								(game->player1->option == SCISSORS && game->player2->option == PAPER))
@@ -421,6 +434,7 @@ void playGame(game *game)
 								sprintf(player2Msg, "MESG It's a tie: Score %d - %d\n", game->player2->score, game->player1->score);
 							}
 						}
+						//player1Msg, player2Msg and specMsg are slightly different, send it to the relevant parts
 						send(game->player1->socket, player1Msg, strlen(player1Msg), 0);
 						send(game->player2->socket, player2Msg, strlen(player2Msg), 0);
 						for (int i = 0; i < game->nrOfSpectators; ++i)
@@ -442,6 +456,7 @@ void playGame(game *game)
 		}
 	}
 }
+//This function sends the list of games to a client
 void sendSpec(client *theClient)
 {
 	char msgToSend[BUFFERSIZE];
@@ -465,6 +480,7 @@ void sendSpec(client *theClient)
 	numBytes = send(theClient->socket, msgToSend, strlen(msgToSend), 0);
 	theClient->inMenu = false;
 }
+//This thread handles the queue of player
 void queueHandler(void)
 {
 	client *clientQueue[10];
@@ -473,6 +489,7 @@ void queueHandler(void)
 	{
 		for (int i = 0; i < nrOfClients; ++i)
 		{
+			//Check if the player disconnected or wants to go back to the menu
 			if ((clients[i]->disconnected && clients[i]->inQueue) || clients[i]->wantsToLeaveQueue)
 			{
 				for (int j = 0; j < clientsInQueue; ++j)
@@ -510,6 +527,7 @@ void queueHandler(void)
 					}
 				}
 			}
+
 			if (clients[i]->wantsToQueue && clientsInQueue < 10)
 			{
 				clientQueue[clientsInQueue++] = clients[i];
@@ -522,6 +540,7 @@ void queueHandler(void)
 				clients[i]->inMenu = false;
 			}
 		}
+		//Send the ready message to the players if there are more than 2 "unready" players in the queue
 		if (clientsInQueue - nrOfReadyClients >= 2)
 		{
 			for (int i = 0; i < clientsInQueue; ++i)
@@ -534,6 +553,7 @@ void queueHandler(void)
 				}
 			}
 		}
+		//Wait for 2 clients to be ready and then start a game with them
 		if (nrOfReadyClients >= 2)
 		{
 			bool found = false;
@@ -572,6 +592,7 @@ void queueHandler(void)
 							clientsInQueue--;
 							nrOfGames++;
 							nrOfReadyClients -= 2;
+							//Special case for if a player leaves during the "ready-check"
 							if (nrOfReadyClients == 1)
 							{
 								bool found = false;
@@ -714,7 +735,7 @@ int main(int argc, char *argv[])
 						clients[nrOfClients]->address = inet_ntoa(theirAddr.sin_addr);
 						clients[nrOfClients]->port = ntohs(theirAddr.sin_port);
 						clients[nrOfClients]->socket = tempSFD;
-						numBytes = send(clients[nrOfClients]->socket, protocol, strlen(protocol), 0);
+						send(clients[nrOfClients]->socket, protocol, strlen(protocol), 0);
 
 						FD_SET(clients[nrOfClients]->socket, &master);
 						if (clients[nrOfClients]->socket > fDMax)
@@ -728,9 +749,10 @@ int main(int argc, char *argv[])
 				{
 					if ((numBytes = recv(i, clientMsg, clientMsgLen, 0)) <= 0)
 					{
+						//If we recieve 0 bytes, a client has left and needs to be removed
 						if (numBytes == 0)
 						{
-							printf("Client left\n");
+							std::cout << "Client left\n";
 							bool found = false;
 							for (int k = 0; k < nrOfClients && !found; ++k)
 							{
@@ -753,7 +775,8 @@ int main(int argc, char *argv[])
 					}
 					else
 					{
-
+						//The messages are constructed in the way: "COMMAND STRING\n"
+						//We scan the entire message and take out the command
 						sscanf(clientMsg, "%s %[^\n]", command, buffer);
 						struct sockaddr_in addres;
 						socklen_t sa_len;
@@ -767,12 +790,12 @@ int main(int argc, char *argv[])
 						{
 							if (strcmp(bobp, clients[b]->address) == 0 && ntohs(addres.sin_port) == clients[b]->port)
 							{
+								//if the player just connected or wants to reset, send the menu (or available games if spectator)
 								if (strcmp(command, "CONACC") == 0 || strcmp(command, "RESET") == 0)
 								{
 
 									if (clients[b]->isSpectator)
 									{
-										std::cout << "The spectator\n";
 										removeSpectatorFromGame(clients[b]);
 										clients[b]->isSpectator = false;
 										sendSpec(clients[b]);
@@ -788,8 +811,12 @@ int main(int argc, char *argv[])
 									clients[b]->inGame = false;
 									clients[b]->isSpectator = false;
 								}
+								//If the player wants to set something, we use OPTION
 								else if (strcmp(command, "OPTION") == 0)
 								{
+									//OPTION does different things depending on where the client is
+									//For example: if the player is a player in a game, set their choice to rock, paper or scissors,
+									//if a player is a spectator, leave the game
 									if (clients[b]->inMenu == true)
 									{
 										if (strcmp(buffer, PLAYINPUT) == 0)
@@ -941,6 +968,7 @@ int main(int argc, char *argv[])
 										}
 									}
 								}
+								//if the player sends something werid
 								else
 								{
 									send(clients[b]->socket, "EROR Unkown command\n", strlen("EROR Unkown command\n"), 0);

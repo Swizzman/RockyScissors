@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
 		}
 		else
 		{
+			//This is the playerinput, to make it non-blocking a select is used
 			if (FD_ISSET(stdinSock, &read_sds))
 			{
 
@@ -131,8 +132,9 @@ int main(int argc, char *argv[])
 				sprintf(msgToSend, "OPTION %s\n", input);
 				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
 				fflush(stdin);
-					FD_CLR(stdinSock, &read_sds);
+				FD_CLR(stdinSock, &read_sds);
 			}
+			//if we recieved something on the socked, we have data to read
 			if (FD_ISSET(sockFD, &read_sds))
 			{
 				if ((numBytes = recv(sockFD, servMsg, sizeof(servMsg), 0)) <= 0)
@@ -141,11 +143,13 @@ int main(int argc, char *argv[])
 					break;
 				}
 				msgTemp = servMsg;
+				//As long as there is data to read, read it
 				while (strlen(servMsg) > 0)
 				{
 					//Read the command and eventual message
 					sscanf(servMsg, "%s %[^\n]", command, msgToPrint);
 
+					//check what the command is and do different things depending on the command
 					if (strcmp(command, "MENU") == 0)
 					{
 						printf("Please select:\n1. Play\n2. Watch\n3. Highscores\n0. Exit\n");
@@ -238,6 +242,8 @@ int main(int argc, char *argv[])
 						std::cout << "ERROR: " << msgToPrint << std::endl;
 					}
 
+					//now the text is erased from the message (+2 to handle the space and \n) and inserted back. If there is still more
+					//data it will loop through again to read more
 					msgTemp.erase(0, strlen(command) + strlen(msgToPrint) + 2);
 					strcpy(servMsg, msgTemp.c_str());
 					memset(&command, 0, sizeof(command));
