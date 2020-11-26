@@ -128,10 +128,10 @@ int main(int argc, char *argv[])
 			{
 
 				read(stdinSock, input, sizeof(input));
-				sprintf(msgToSend, "OPTION %s", input);
+				sprintf(msgToSend, "OPTION %s\n", input);
 				numBytes = send(sockFD, msgToSend, strlen(msgToSend), 0);
-
-				FD_CLR(stdinSock, &read_sds);
+				fflush(stdin);
+					FD_CLR(stdinSock, &read_sds);
 			}
 			if (FD_ISSET(sockFD, &read_sds))
 			{

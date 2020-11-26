@@ -20,6 +20,7 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#define TIMEOUT 2
 #define ROCK 1
 #define PAPER 2
 #define SCISSORS 3
@@ -319,7 +320,7 @@ void playGame(game *game)
 				}
 				else
 				{
-					if ((time(NULL) - start) >= 2)
+					if ((time(NULL) - start) >= TIMEOUT)
 					{
 						if (game->player1->option == 0)
 						{
@@ -330,7 +331,7 @@ void playGame(game *game)
 							sprintf(player1Msg, "MESG You did not make a selection, automatic loss of round\nMESG score %d - %d\n", game->player1->score, game->player2->score);
 							sprintf(player2Msg, "MESG Other player didn't select, you won the round\nMESG score %d - %d\n", game->player2->score, game->player1->score);
 							sprintf(specMsg, "MESG Player 1 didn't select, Player 2 Wins\nMESG score %d - %d\n", game->player1->score, game->player2->score);
-							game->player1->allResponseTime += 2.f;
+							game->player1->allResponseTime += (double)TIMEOUT;
 							game->player1->option = (uint16_t)-1;
 						}
 						if (game->player2->option == 0)
@@ -342,7 +343,7 @@ void playGame(game *game)
 							sprintf(player2Msg, "MESG You did not make a selection, automatic loss of round\nMESG score %d - %d\n", game->player2->score, game->player1->score);
 							sprintf(player1Msg, "MESG Other player didn't select, you won the round\nMESG score %d - %d\n", game->player1->score, game->player2->score);
 							sprintf(specMsg, "MESG Player 2 didn't select, Player 1 wins\nMESG score %d - %d\n", game->player1->score, game->player2->score);
-							game->player2->allResponseTime += 2.f;
+							game->player2->allResponseTime += (double)TIMEOUT;
 							game->player2->option = (uint16_t)-1;
 						}
 					}
